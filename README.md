@@ -74,24 +74,25 @@ flutter run -d web-server --web-port 8080 --dart-define=KAKAO_JS_KEY=YOUR_KAKAO_
 브라우저 접속:
 http://127.0.0.1:8080
 
-## **트러블슈팅**
-hasDataGoKrKey: false가 나올 때
-backend/.env 위치/키 값 확인 후 백엔드 서버 재시작 필요.
+## 트러블슈팅
 
-Flutter에서 Failed to fetch 발생 시
-백엔드(127.0.0.1 (line 8000)) 실행 여부와 CORS 허용 주소(localhost (line 8080)) 확인.
+- hasDataGoKrKey가 `false`로 나올 때  
+  `backend/.env` 위치/키 값을 확인하고 백엔드 서버를 재시작합니다.
 
-Chrome/Edge 디버그 실행 실패 시
-flutter run -d web-server --web-port 8080 방식으로 우회 가능.
+- Flutter에서 `Failed to fetch` 발생 시  
+  백엔드(`127.0.0.1:8000`) 실행 여부와 CORS 허용 주소(`localhost:8080`)를 확인합니다.
 
-GitHub push 시 non-fast-forward 에러
-원격 변경사항 pull 후 충돌 해결 커밋 뒤 다시 push 필요.
-git clone https://github.com/Blac3-Panda/air-ventilation-app.git
-cd air-ventilation-app
+- Chrome/Edge 디버그 실행 실패 시  
+  `flutter run -d web-server --web-port 8080` 방식으로 실행합니다.
 
-## **프로젝트 회고**
-공공 API를 단순 조회하는 수준에서 끝내지 않고,
-주소 기반 위치 해석과 환기 판단 로직까지 연결하면서 “실사용 가능한 형태”로 발전시켰습니다.
-다음 단계에서는 측정소 거리 기반 정밀 매칭과 알림 자동화로 완성도를 더 높일 계획입니다.
+- GitHub push 시 non-fast-forward 에러  
+  원격 변경사항을 pull 후 충돌 해결 커밋 뒤 다시 push 합니다.
+
+## 프로젝트 회고
+
+공공 API를 단순 조회하는 수준에서 끝내지 않고,  
+주소 기반 위치 해석과 환기 판단 로직까지 연결해 실사용 가능한 형태로 발전시켰습니다.  
+다음 단계에서는 측정소 거리 기반 정밀 매칭과 알림 자동화로 완성도를 높일 계획입니다.
+
 
 
