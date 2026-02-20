@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -17,6 +18,61 @@ const String kKakaoJsKey = String.fromEnvironment(
 const Color kPrimaryColor = Color(0xFF2F80ED);
 const Color kSecondaryColor = Color(0xFF27AE60);
 const Color kAccentColor = Color(0xFFB2F5EA);
+
+class ActivityOption {
+  const ActivityOption({
+    required this.key,
+    required this.label,
+    required this.icon,
+    required this.help,
+  });
+
+  final String key;
+  final String label;
+  final IconData icon;
+  final String help;
+}
+
+const List<ActivityOption> kActivityOptions = [
+  ActivityOption(
+    key: 'running',
+    label: '러닝',
+    icon: Icons.directions_run_rounded,
+    help: '야외 운동 가능 시간 추천',
+  ),
+  ActivityOption(
+    key: 'school',
+    label: '등원',
+    icon: Icons.school_rounded,
+    help: '아이 등원 안전도 안내',
+  ),
+  ActivityOption(
+    key: 'laundry',
+    label: '빨래',
+    icon: Icons.wb_sunny_rounded,
+    help: '빨래 건조 적합도 안내',
+  ),
+  ActivityOption(
+    key: 'window',
+    label: '환기',
+    icon: Icons.window_rounded,
+    help: '창문 열기 추천 시간',
+  ),
+];
+
+List<String> sanitizeActivityKeys(List<String>? raw) {
+  final allowed = kActivityOptions.map((e) => e.key).toSet();
+  final clean = <String>[];
+  for (final key in (raw ?? const <String>[])) {
+    if (allowed.contains(key) && !clean.contains(key)) {
+      clean.add(key);
+    }
+  }
+  if (clean.isEmpty) {
+    return const ['window', 'school'];
+  }
+  return clean.take(3).toList(growable: false);
+}
 
 void main() {
   runApp(const AirGuideApp());
@@ -492,6 +548,7 @@ class _HomePageState extends State<HomePage> {
   static const _notifyGoodKey = 'notify_good';
   static const _notifyBadKey = 'notify_bad';
   static const _notifyTrafficKey = 'notify_traffic';
+  static const _activityPrefsKey = 'activity_keys';
 
   int currentIndex = 0;
   bool loading = true;
@@ -501,6 +558,7 @@ class _HomePageState extends State<HomePage> {
   bool notifyGood = true;
   bool notifyBad = true;
   bool notifyTraffic = true;
+  List<String> selectedActivityKeys = const ['window', 'school'];
 
   @override
   void initState() {
@@ -516,6 +574,9 @@ class _HomePageState extends State<HomePage> {
       notifyGood = prefs.getBool(_notifyGoodKey) ?? true;
       notifyBad = prefs.getBool(_notifyBadKey) ?? true;
       notifyTraffic = prefs.getBool(_notifyTrafficKey) ?? true;
+      selectedActivityKeys = sanitizeActivityKeys(
+        prefs.getStringList(_activityPrefsKey),
+      );
       loading = false;
     });
   }
@@ -526,6 +587,7 @@ class _HomePageState extends State<HomePage> {
     required bool newNotifyGood,
     required bool newNotifyBad,
     required bool newNotifyTraffic,
+    required List<String> newActivityKeys,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_addressKey, newAddress);
@@ -533,6 +595,10 @@ class _HomePageState extends State<HomePage> {
     await prefs.setBool(_notifyGoodKey, newNotifyGood);
     await prefs.setBool(_notifyBadKey, newNotifyBad);
     await prefs.setBool(_notifyTrafficKey, newNotifyTraffic);
+    await prefs.setStringList(
+      _activityPrefsKey,
+      sanitizeActivityKeys(newActivityKeys),
+    );
 
     setState(() {
       address = newAddress;
@@ -540,6 +606,7 @@ class _HomePageState extends State<HomePage> {
       notifyGood = newNotifyGood;
       notifyBad = newNotifyBad;
       notifyTraffic = newNotifyTraffic;
+      selectedActivityKeys = sanitizeActivityKeys(newActivityKeys);
     });
   }
 
@@ -550,14 +617,18 @@ class _HomePageState extends State<HomePage> {
     }
 
     final pages = [
-      StatusPage(address: address, floor: floor),
-      WeatherPage(address: address, floor: floor),
+      StatusPage(
+        address: address,
+        floor: floor,
+        selectedActivityKeys: selectedActivityKeys,
+      ),
       SettingsPage(
         initialAddress: address,
         initialFloor: floor,
         initialNotifyGood: notifyGood,
         initialNotifyBad: notifyBad,
         initialNotifyTraffic: notifyTraffic,
+        initialActivityKeys: selectedActivityKeys,
         onSave: _saveSettings,
       ),
     ];
@@ -613,7 +684,6 @@ class _HomePageState extends State<HomePage> {
         onDestinationSelected: (v) => setState(() => currentIndex = v),
         destinations: const [
           NavigationDestination(icon: Icon(Icons.air_rounded), label: '상태'),
-          NavigationDestination(icon: Icon(Icons.cloud_outlined), label: '날씨'),
           NavigationDestination(
             icon: Icon(Icons.settings_rounded),
             label: '설정',
@@ -632,6 +702,7 @@ class SettingsPage extends StatefulWidget {
     required this.initialNotifyGood,
     required this.initialNotifyBad,
     required this.initialNotifyTraffic,
+    required this.initialActivityKeys,
     required this.onSave,
   });
 
@@ -640,12 +711,14 @@ class SettingsPage extends StatefulWidget {
   final bool initialNotifyGood;
   final bool initialNotifyBad;
   final bool initialNotifyTraffic;
+  final List<String> initialActivityKeys;
   final Future<void> Function({
     required String newAddress,
     required int newFloor,
     required bool newNotifyGood,
     required bool newNotifyBad,
     required bool newNotifyTraffic,
+    required List<String> newActivityKeys,
   })
   onSave;
 
@@ -662,6 +735,7 @@ class _SettingsPageState extends State<SettingsPage> {
   late bool _notifyBad;
   late bool _notifyTraffic;
   String _languageCode = 'ko';
+  late Set<String> _activityKeys;
 
   bool saving = false;
 
@@ -675,6 +749,7 @@ class _SettingsPageState extends State<SettingsPage> {
     _notifyGood = widget.initialNotifyGood;
     _notifyBad = widget.initialNotifyBad;
     _notifyTraffic = widget.initialNotifyTraffic;
+    _activityKeys = sanitizeActivityKeys(widget.initialActivityKeys).toSet();
   }
 
   @override
@@ -700,23 +775,63 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _submit() async {
-    if (!_basicFormKey.currentState!.validate()) return;
+    final address = _addressController.text.trim();
+    final parsedFloor = int.tryParse(_floorController.text.trim());
+
+    if (address.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter an address or use address search.'),
+        ),
+      );
+      return;
+    }
+    if (parsedFloor == null || parsedFloor <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a valid floor number.')),
+      );
+      return;
+    }
+    if (_activityKeys.length < 2) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Select 2-3 activity cards.')),
+      );
+      return;
+    }
+
     setState(() => saving = true);
     try {
       await widget.onSave(
-        newAddress: _addressController.text.trim(),
-        newFloor: int.parse(_floorController.text.trim()),
+        newAddress: address,
+        newFloor: parsedFloor,
         newNotifyGood: _notifyGood,
         newNotifyBad: _notifyBad,
         newNotifyTraffic: _notifyTraffic,
+        newActivityKeys: _activityKeys.toList(growable: false),
       );
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('설정을 저장했습니다.')));
+      ).showSnackBar(const SnackBar(content: Text('Settings saved.')));
     } finally {
       if (mounted) setState(() => saving = false);
     }
+  }
+
+  void _toggleActivity(String key, bool selected) {
+    if (selected && _activityKeys.length >= 3 && !_activityKeys.contains(key)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You can select up to 3 activity cards.')),
+      );
+      return;
+    }
+    setState(() {
+      if (selected) {
+        _activityKeys.add(key);
+      } else {
+        _activityKeys.remove(key);
+      }
+    });
   }
 
   Future<void> _openCategory({required String title, required Widget child}) {
@@ -843,6 +958,57 @@ class _SettingsPageState extends State<SettingsPage> {
                         ),
                       ),
                     ),
+                    _SettingsMenuTile(
+                      icon: Icons.local_activity_rounded,
+                      title: 'Activity Cards',
+                      subtitle: 'Pick 2-3 cards',
+                      onTap: () => _openCategory(
+                        title: 'Activity Cards',
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Choose 2-3 activities shown on the Status page.',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF1F4E8C),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            ...kActivityOptions.map((opt) {
+                              return CheckboxListTile(
+                                value: _activityKeys.contains(opt.key),
+                                onChanged: (v) =>
+                                    _toggleActivity(opt.key, v ?? false),
+                                title: Text(opt.label),
+                                subtitle: Text(opt.help),
+                                secondary: Icon(opt.icon, color: kPrimaryColor),
+                                controlAffinity:
+                                    ListTileControlAffinity.leading,
+                                contentPadding: EdgeInsets.zero,
+                              );
+                            }),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Selected: ${_activityKeys.length}',
+                              style: const TextStyle(
+                                color: Colors.black54,
+                                fontSize: 12,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton(
+                                onPressed: saving ? null : _submit,
+                                child: Text(saving ? 'Saving...' : 'Save'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
                     _SettingsMenuTile(
                       icon: Icons.language_rounded,
                       title: '언어',
@@ -1008,10 +1174,16 @@ class _SettingsCategoryPage extends StatelessWidget {
 }
 
 class StatusPage extends StatefulWidget {
-  const StatusPage({super.key, required this.address, required this.floor});
+  const StatusPage({
+    super.key,
+    required this.address,
+    required this.floor,
+    required this.selectedActivityKeys,
+  });
 
   final String address;
   final int? floor;
+  final List<String> selectedActivityKeys;
 
   @override
   State<StatusPage> createState() => _StatusPageState();
@@ -1030,19 +1202,217 @@ class _StatusPageState extends State<StatusPage> {
   void didUpdateWidget(covariant StatusPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.address != widget.address ||
-        oldWidget.floor != widget.floor) {
+        oldWidget.floor != widget.floor ||
+        !listEquals(
+          oldWidget.selectedActivityKeys,
+          widget.selectedActivityKeys,
+        )) {
       _future = _load();
     }
   }
 
   Future<StatusSummary> _load() {
     if (widget.address.isEmpty || widget.floor == null) {
-      return Future.error('설정 탭에서 주소/층수를 먼저 저장해주세요.');
+      return Future.error('Save address/floor in Settings first.');
     }
     return AirGuideApi.fetchStatusSummary(
       sidoName: inferSidoNameFromAddress(widget.address),
       address: widget.address,
     );
+  }
+
+  int _integratedFloorScore(int integratedIndex) {
+    if (integratedIndex >= 251) return 90;
+    if (integratedIndex >= 101) return 75;
+    if (integratedIndex >= 51) return 50;
+    return 25;
+  }
+
+  int _effectiveRiskScore(StatusSummary s) {
+    final floorScore = _integratedFloorScore(s.integratedIndex);
+    final value = math.max(s.riskScore, floorScore);
+    return value.clamp(0, 100);
+  }
+
+  List<_TimingPoint> _buildTimingSlots(StatusSummary s) {
+    final now = DateTime.now();
+    final base = _effectiveRiskScore(s);
+    final floor = widget.floor ?? 1;
+    final reasonsText = s.reasons.join(' ');
+    final lowerReasons = reasonsText.toLowerCase();
+    final hasTraffic =
+        reasonsText.contains('교통') ||
+        reasonsText.contains('정체') ||
+        lowerReasons.contains('traffic') ||
+        lowerReasons.contains('congestion');
+    final hasEmission =
+        reasonsText.contains('TMS') ||
+        reasonsText.contains('굴뚝') ||
+        reasonsText.contains('공단') ||
+        reasonsText.contains('비산먼지') ||
+        lowerReasons.contains('emission');
+
+    return List.generate(8, (i) {
+      final offset = i * 30;
+      final slot = now.add(Duration(minutes: offset));
+      var score = base;
+
+      final wind = s.windSpeedMs ?? 0;
+      if (wind >= 1.2 && wind <= 4.8) {
+        score -= 6;
+      } else if (wind < 0.8) {
+        score += 4;
+      } else if (wind >= 7) {
+        score += 5;
+      }
+
+      if (floor <= 3) {
+        score += 6;
+      } else if (floor >= 10) {
+        score -= 4;
+      }
+
+      final h = slot.hour;
+      final rushHour = (h >= 7 && h <= 9) || (h >= 17 && h <= 20);
+      if (rushHour) {
+        score += 8;
+      } else if (h >= 22 || h <= 5) {
+        score -= 3;
+      }
+
+      if (hasEmission) score += 8;
+      if (hasTraffic) score += 6;
+
+      if (offset >= 30 && offset <= 120) {
+        score -= 4;
+      }
+
+      score = score.clamp(0, 100);
+      return _TimingPoint(offsetMin: offset, score: score, time: slot);
+    });
+  }
+
+  _TimingPoint _bestSlot(List<_TimingPoint> slots) {
+    var best = slots.first;
+    for (final slot in slots.skip(1)) {
+      if (slot.score < best.score) {
+        best = slot;
+      }
+    }
+    return best;
+  }
+
+  List<String> _buildReasonLines(StatusSummary s) {
+    final lines = <String>[];
+
+    if (s.integratedIndex >= 101) {
+      lines.add(
+        'Integrated air index is elevated, so ventilation is conservative.',
+      );
+    }
+
+    for (final reason in s.reasons) {
+      if (reason.trim().isEmpty) continue;
+      lines.add(reason.trim());
+      if (lines.length >= 3) break;
+    }
+
+    if (lines.isEmpty && s.riskScore >= 60) {
+      lines.add(
+        'Air concentration and wind conditions indicate caution for ventilation.',
+      );
+    }
+
+    return lines;
+  }
+
+  List<_ActivityGuide> _buildActivityGuides(
+    StatusSummary s,
+    _TimingPoint best,
+  ) {
+    final selected = sanitizeActivityKeys(widget.selectedActivityKeys);
+    final pm25 = double.tryParse(s.pm25Value);
+
+    ActivityOption optionFor(String key) {
+      return kActivityOptions.firstWhere(
+        (e) => e.key == key,
+        orElse: () => kActivityOptions.first,
+      );
+    }
+
+    final guides = <_ActivityGuide>[];
+
+    for (final key in selected) {
+      final option = optionFor(key);
+      if (key == 'window') {
+        final title = best.score <= 40
+            ? 'Ventilation OK'
+            : (best.score <= 60 ? 'Short Ventilation' : 'Hold Ventilation');
+        final detail = best.score <= 40
+            ? (best.offsetMin == 0
+                  ? 'Ventilate now for about ${s.recommendedVentilationMin} minutes.'
+                  : 'Ventilate in ${best.offsetMin} minutes for about ${s.recommendedVentilationMin} minutes.')
+            : 'Keep windows closed for now.';
+        guides.add(
+          _ActivityGuide(option: option, title: title, detail: detail),
+        );
+      } else if (key == 'running') {
+        final title = best.score <= 45
+            ? 'Running Recommended'
+            : 'Running Caution';
+        final detail = best.score <= 45
+            ? '${best.offsetMin == 0 ? 'Now' : 'In ${best.offsetMin}m'} is better for a 20-30 minute run.'
+            : 'Prefer indoor exercise due to air quality risk.';
+        guides.add(
+          _ActivityGuide(option: option, title: title, detail: detail),
+        );
+      } else if (key == 'school') {
+        final title = best.score <= 55
+            ? 'School Route OK'
+            : 'School Route Caution';
+        final detail = best.score <= 55
+            ? 'Current conditions are relatively safe for school commute.'
+            : 'Use a mask and minimize outdoor exposure time.';
+        guides.add(
+          _ActivityGuide(option: option, title: title, detail: detail),
+        );
+      } else if (key == 'laundry') {
+        final goodLaundry = (pm25 != null && pm25 <= 35) && best.score <= 55;
+        final title = goodLaundry
+            ? 'Outdoor Drying OK'
+            : 'Indoor Drying Better';
+        final detail = goodLaundry
+            ? 'Outdoor drying is acceptable now.'
+            : 'Prefer indoor drying due to outdoor pollution risk.';
+        guides.add(
+          _ActivityGuide(option: option, title: title, detail: detail),
+        );
+      }
+    }
+
+    if (guides.isEmpty) {
+      guides.add(
+        _ActivityGuide(
+          option: kActivityOptions.first,
+          title: 'No Activity Card',
+          detail: 'Select 2-3 activity cards in Settings.',
+        ),
+      );
+    }
+
+    if (guides.length > 3) {
+      return guides.take(3).toList(growable: false);
+    }
+
+    return guides;
+  }
+
+  String _slotLabel(_TimingPoint p) {
+    if (p.offsetMin == 0) return 'Now';
+    final hour = p.time.hour;
+    final ampm = hour < 12 ? 'AM' : 'PM';
+    final h12 = hour % 12 == 0 ? 12 : hour % 12;
+    return '$h12 $ampm';
   }
 
   void _refresh() => setState(() => _future = _load());
@@ -1074,7 +1444,7 @@ class _StatusPageState extends State<StatusPage> {
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
                           const Text(
-                            '실시간 상태를 가져오지 못했어요',
+                            'Failed to load real-time status',
                             style: TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.w700,
@@ -1086,7 +1456,7 @@ class _StatusPageState extends State<StatusPage> {
                           const SizedBox(height: 12),
                           FilledButton(
                             onPressed: _refresh,
-                            child: const Text('다시 시도'),
+                            child: const Text('Retry'),
                           ),
                         ],
                       ),
@@ -1094,177 +1464,356 @@ class _StatusPageState extends State<StatusPage> {
                   }
 
                   final s = snap.requireData;
-                  final band = scoreBandFrom(s.riskScore);
+                  final displayScore = _effectiveRiskScore(s);
+                  final band = scoreBandFrom(displayScore);
+                  final slots = _buildTimingSlots(s);
+                  final best = _bestSlot(slots);
+                  final reasonLines = _buildReasonLines(s);
+                  final activities = _buildActivityGuides(s, best);
+                  final timingMessage = best.score >= 61
+                      ? 'Ventilation is not recommended today.'
+                      : (best.offsetMin == 0
+                            ? 'Now is the best ventilation window.'
+                            : 'Ventilate in ${best.offsetMin} minutes.');
 
-                  return _SoftCard(
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(18),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(24),
-                        gradient: const LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [Color(0xFF2F80ED), Color(0xFF1F4E8C)],
-                        ),
-                        border: Border.all(
-                          color: const Color(
-                            0xFF2BC8FF,
-                          ).withValues(alpha: 0.45),
-                        ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(
-                                Icons.place_rounded,
-                                color: kAccentColor,
-                                size: 18,
-                              ),
-                              const SizedBox(width: 4),
-                              Expanded(
-                                child: Text(
-                                  s.stationName,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                  textAlign: TextAlign.center,
-                                ),
-                              ),
-                              IconButton(
-                                onPressed: _refresh,
-                                icon: const Icon(
-                                  Icons.refresh,
-                                  color: Colors.white,
-                                ),
-                                tooltip: '새로고침',
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Stack(
-                            alignment: Alignment.center,
-                            children: [
-                              SizedBox(
-                                width: 230,
-                                height: 230,
-                                child: CircularProgressIndicator(
-                                  value:
-                                      (100 - s.riskScore).clamp(0, 100) / 100,
-                                  strokeWidth: 16,
-                                  backgroundColor: Colors.white.withValues(
-                                    alpha: 0.15,
-                                  ),
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                    band.color,
-                                  ),
-                                ),
-                              ),
-                              Container(
-                                width: 184,
-                                height: 184,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF071926),
-                                  borderRadius: BorderRadius.circular(999),
-                                  border: Border.all(
-                                    color: Colors.white.withValues(alpha: 0.16),
-                                  ),
-                                ),
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    const Text(
-                                      'AIR SCORE',
-                                      style: TextStyle(
-                                        color: Color(0xFFD4F4EE),
-                                        fontSize: 12,
-                                      ),
+                  return Column(
+                    children: [
+                      _SoftCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Row(
+                              children: [
+                                const Expanded(
+                                  child: Text(
+                                    'Current Ventilation Status',
+                                    style: TextStyle(
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.w800,
+                                      color: Color(0xFF134A78),
                                     ),
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      s.riskScore.toString().padLeft(3, '0'),
-                                      style: const TextStyle(
-                                        fontSize: 44,
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 14,
-                                        vertical: 5,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: band.color,
-                                        borderRadius: BorderRadius.circular(
-                                          999,
-                                        ),
-                                      ),
-                                      child: Text(
-                                        band.label,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                                IconButton(
+                                  onPressed: _refresh,
+                                  icon: const Icon(Icons.refresh),
+                                  tooltip: 'Refresh',
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Container(
+                              width: 164,
+                              height: 164,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: const LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Color(0xFF3CB5FF),
+                                    Color(0xFF1E88E5),
                                   ],
                                 ),
+                                boxShadow: const [
+                                  BoxShadow(
+                                    color: Color(0x332F80ED),
+                                    blurRadius: 16,
+                                    offset: Offset(0, 8),
+                                  ),
+                                ],
+                              ),
+                              alignment: Alignment.center,
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    '$displayScore',
+                                    style: const TextStyle(
+                                      fontSize: 46,
+                                      fontWeight: FontWeight.w800,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    band.label,
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'Station ${s.stationName} ? Index ${s.integratedIndex} (${s.integratedIndexGrade})',
+                              style: const TextStyle(color: Colors.black87),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 10),
+                            Wrap(
+                              alignment: WrapAlignment.center,
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                _StatusChip(
+                                  label: s.pm25Chip,
+                                  icon: Icons.blur_on,
+                                ),
+                                _StatusChip(
+                                  label: 'Wind ${s.windDirectionText}',
+                                  icon: Icons.explore,
+                                ),
+                                _StatusChip(
+                                  label: s.windSpeedMs == null
+                                      ? 'Wind speed n/a'
+                                      : 'Wind ${s.windSpeedMs!.toStringAsFixed(1)}m/s',
+                                  icon: Icons.air,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 11,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEAF4FF),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: const Color(0xFFD3E8FF),
+                                ),
+                              ),
+                              child: Text(
+                                ventilationTipByWind(
+                                  recommendation: s.recommendation,
+                                  windText: s.windDirectionText,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                            if (reasonLines.isNotEmpty) ...[
+                              const SizedBox(height: 10),
+                              Column(
+                                children: reasonLines
+                                    .map(
+                                      (line) => Padding(
+                                        padding: const EdgeInsets.only(
+                                          bottom: 4,
+                                        ),
+                                        child: Text(
+                                          '- $line',
+                                          textAlign: TextAlign.center,
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.black87,
+                                          ),
+                                        ),
+                                      ),
+                                    )
+                                    .toList(growable: false),
                               ),
                             ],
-                          ),
-                          const SizedBox(height: 10),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            alignment: WrapAlignment.center,
-                            children: [
-                              _StatusChip(
-                                label: s.pm25Chip,
-                                icon: Icons.blur_on,
-                              ),
-                              _StatusChip(
-                                label: '풍향 ${s.windDirectionText}',
-                                icon: Icons.explore,
-                              ),
-                              _StatusChip(
-                                label: s.windSpeedMs == null
-                                    ? '풍속 정보없음'
-                                    : '풍속 ${s.windSpeedMs!.toStringAsFixed(1)}m/s',
-                                icon: Icons.air,
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          Text(
-                            '권고: ${s.recommendation} (${s.recommendedVentilationMin}분)',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            '통합지수 ${s.integratedIndex} · ${s.dominantPollutant}',
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.75),
-                              fontSize: 12,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
+                      const SizedBox(height: 12),
+                      _SoftCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            const Text(
+                              'Smart Ventilation Timing',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF134A78),
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              timingMessage,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF1F4E8C),
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Best slot: ${_slotLabel(best)}',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.black54,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 12),
+                            _TimingHistogram(slots: slots),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      _SoftCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            const Text(
+                              'Activity Recommendations',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF134A78),
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 10),
+                            Wrap(
+                              alignment: WrapAlignment.center,
+                              spacing: 10,
+                              runSpacing: 10,
+                              children: activities
+                                  .map((item) => _ActivityGuideCard(item: item))
+                                  .toList(growable: false),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   );
                 },
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TimingPoint {
+  const _TimingPoint({
+    required this.offsetMin,
+    required this.score,
+    required this.time,
+  });
+
+  final int offsetMin;
+  final int score;
+  final DateTime time;
+}
+
+class _ActivityGuide {
+  const _ActivityGuide({
+    required this.option,
+    required this.title,
+    required this.detail,
+  });
+
+  final ActivityOption option;
+  final String title;
+  final String detail;
+}
+
+class _TimingHistogram extends StatelessWidget {
+  const _TimingHistogram({required this.slots});
+
+  final List<_TimingPoint> slots;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 160,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: slots
+            .map((slot) {
+              final good = 100 - slot.score;
+              final h = 28 + (good * 0.86);
+              final color = scoreBandFrom(slot.score).color;
+              final label = slot.offsetMin == 0 ? 'Now' : '${slot.offsetMin}m';
+              return Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 3),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Text(
+                        '${slot.score}',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Colors.black54,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Container(
+                        height: h,
+                        decoration: BoxDecoration(
+                          color: color.withValues(alpha: 0.82),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        label,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Colors.black54,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            })
+            .toList(growable: false),
+      ),
+    );
+  }
+}
+
+class _ActivityGuideCard extends StatelessWidget {
+  const _ActivityGuideCard({required this.item});
+
+  final _ActivityGuide item;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 220,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3FAFF),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFD5EAFF)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Icon(item.option.icon, color: kPrimaryColor),
+          const SizedBox(height: 6),
+          Text(
+            '${item.option.label} ? ${item.title}',
+            style: const TextStyle(
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF134A78),
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            item.detail,
+            style: const TextStyle(fontSize: 12),
+            textAlign: TextAlign.center,
           ),
         ],
       ),
