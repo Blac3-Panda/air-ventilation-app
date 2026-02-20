@@ -1,5 +1,4 @@
-﻿
-import 'dart:convert';
+﻿import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -8,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'widgets/daum_postcode.dart';
 import 'widgets/kakao_map_embed.dart';
 
 const String kKakaoJsKey = String.fromEnvironment('KAKAO_JS_KEY', defaultValue: '');
@@ -19,25 +19,45 @@ void main() {
 class StatusSummary {
   const StatusSummary({
     required this.riskScore,
+    required this.scoreGrade,
+    required this.integratedIndex,
+    required this.integratedIndexGrade,
+    required this.dominantPollutant,
     required this.recommendation,
     required this.recommendedVentilationMin,
     required this.pm10Value,
     required this.pm25Value,
     required this.o3Value,
+    required this.no2Value,
+    required this.so2Value,
+    required this.coValue,
     required this.stationName,
     required this.windDirectionText,
     required this.windSpeedMs,
+    required this.reasons,
+    required this.notificationMessage,
   });
 
   final int riskScore;
+  final String scoreGrade;
+  final int integratedIndex;
+  final String integratedIndexGrade;
+  final String dominantPollutant;
   final String recommendation;
   final int recommendedVentilationMin;
+
   final String pm10Value;
   final String pm25Value;
   final String o3Value;
+  final String no2Value;
+  final String so2Value;
+  final String coValue;
+
   final String stationName;
   final String windDirectionText;
   final double? windSpeedMs;
+  final List<String> reasons;
+  final String notificationMessage;
 
   String get pm25Chip {
     final pm = double.tryParse(pm25Value);
@@ -56,19 +76,32 @@ class StatusSummary {
         ? json['weather'] as Map<String, dynamic>
         : <String, dynamic>{};
 
+    final reasonsRaw = json['reasons'];
+    final parsedReasons = (reasonsRaw is List)
+        ? reasonsRaw.map((e) => '$e').where((e) => e.trim().isNotEmpty).toList()
+        : <String>[];
+
     return StatusSummary(
       riskScore: int.tryParse('${json['riskScore']}') ?? 0,
+      scoreGrade: '${json['scoreGrade'] ?? '정보없음'}',
+      integratedIndex: int.tryParse('${json['integratedIndex']}') ?? 0,
+      integratedIndexGrade: '${json['integratedIndexGrade'] ?? '정보없음'}',
+      dominantPollutant: '${json['dominantPollutant'] ?? '-'}',
       recommendation: '${json['recommendation'] ?? '정보 없음'}',
-      recommendedVentilationMin:
-          int.tryParse('${json['recommendedVentilationMin']}') ?? 0,
+      recommendedVentilationMin: int.tryParse('${json['recommendedVentilationMin']}') ?? 0,
       pm10Value: '${air['pm10Value'] ?? '-'}',
       pm25Value: '${air['pm25Value'] ?? '-'}',
       o3Value: '${air['o3Value'] ?? '-'}',
+      no2Value: '${air['no2Value'] ?? '-'}',
+      so2Value: '${air['so2Value'] ?? '-'}',
+      coValue: '${air['coValue'] ?? '-'}',
       stationName: '${air['stationName'] ?? '측정소 정보 없음'}',
       windDirectionText: '${weather['windDirectionText'] ?? '정보 없음'}',
       windSpeedMs: weather['windSpeedMs'] is num
           ? (weather['windSpeedMs'] as num).toDouble()
           : double.tryParse('${weather['windSpeedMs']}'),
+      reasons: parsedReasons,
+      notificationMessage: '${json['notificationMessage'] ?? ''}',
     );
   }
 }
@@ -94,7 +127,7 @@ class AirGuideApi {
       try {
         final response = await http
             .get(uri, headers: {'Accept': 'application/json'})
-            .timeout(const Duration(seconds: 12));
+            .timeout(const Duration(seconds: 15));
 
         if (response.statusCode != 200) {
           errors.add('$baseUrl => HTTP ${response.statusCode}');
@@ -149,7 +182,7 @@ ScoreBand scoreBandFrom(int score) {
     return const ScoreBand(
       label: '보통',
       color: Color(0xFFFF9800),
-      description: '상황을 보며 짧게 환기하세요.',
+      description: '대기 상황을 보며 잠깐 환기하세요.',
     );
   }
   if (s <= 80) {
@@ -162,7 +195,7 @@ ScoreBand scoreBandFrom(int score) {
   return const ScoreBand(
     label: '매우나쁨',
     color: Color(0xFFE53935),
-    description: '창문을 닫고 실내 공기 관리가 필요해요.',
+    description: '창문을 닫고 실내 공기 관리를 권장해요.',
   );
 }
 
@@ -224,11 +257,20 @@ String inferSidoNameFromAddress(String address) {
   return '서울';
 }
 
-String directionLabelFromDegree(int? degree) {
-  if (degree == null) return '정보 없음';
-  final n = ((degree % 360) + 360) % 360;
-  const labels = ['북', '북동', '동', '남동', '남', '남서', '서', '북서'];
-  return labels[((n + 22) ~/ 45) % 8];
+String ventilationTipByWind({
+  required String recommendation,
+  required String windText,
+}) {
+  if (recommendation == '창문 닫기') {
+    return '현재는 창문을 닫고 공기청정기/환기장치를 활용하세요.';
+  }
+
+  if (windText.contains('북')) return '남쪽 창문 중심으로 5~10분 환기해보세요.';
+  if (windText.contains('남')) return '북쪽 창문 중심으로 5~10분 환기해보세요.';
+  if (windText.contains('동')) return '서쪽 창문 중심으로 5~10분 환기해보세요.';
+  if (windText.contains('서')) return '동쪽 창문 중심으로 5~10분 환기해보세요.';
+
+  return '바람 반대쪽 창문부터 짧게 열어 교차 환기하세요.';
 }
 
 class AirGuideApp extends StatelessWidget {
@@ -260,13 +302,11 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   static const _addressKey = 'address';
   static const _floorKey = 'floor';
-  static const _windowDirectionKey = 'window_direction';
 
   int currentIndex = 1;
   bool loading = true;
   String address = '';
   int? floor;
-  int? windowDirection;
 
   @override
   void initState() {
@@ -279,7 +319,6 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       address = prefs.getString(_addressKey) ?? '';
       floor = prefs.getInt(_floorKey);
-      windowDirection = prefs.getInt(_windowDirectionKey);
       loading = false;
     });
   }
@@ -287,16 +326,13 @@ class _HomePageState extends State<HomePage> {
   Future<void> _save({
     required String newAddress,
     required int newFloor,
-    required int newWindowDirection,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_addressKey, newAddress);
     await prefs.setInt(_floorKey, newFloor);
-    await prefs.setInt(_windowDirectionKey, newWindowDirection);
     setState(() {
       address = newAddress;
       floor = newFloor;
-      windowDirection = newWindowDirection;
     });
   }
 
@@ -310,11 +346,10 @@ class _HomePageState extends State<HomePage> {
       SetupPage(
         initialAddress: address,
         initialFloor: floor,
-        initialWindowDirection: windowDirection,
         onSave: _save,
       ),
-      StatusPage(address: address, floor: floor, windowDirection: windowDirection),
-      const AlertPage(),
+      StatusPage(address: address, floor: floor),
+      AlertPage(address: address, floor: floor),
     ];
 
     return Scaffold(
@@ -375,14 +410,12 @@ class SetupPage extends StatefulWidget {
     super.key,
     required this.initialAddress,
     required this.initialFloor,
-    required this.initialWindowDirection,
     required this.onSave,
   });
 
   final String initialAddress;
   final int? initialFloor;
-  final int? initialWindowDirection;
-  final Future<void> Function({required String newAddress, required int newFloor, required int newWindowDirection}) onSave;
+  final Future<void> Function({required String newAddress, required int newFloor}) onSave;
 
   @override
   State<SetupPage> createState() => _SetupPageState();
@@ -392,7 +425,6 @@ class _SetupPageState extends State<SetupPage> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _addressController;
   late final TextEditingController _floorController;
-  late final TextEditingController _windowController;
   bool saving = false;
 
   @override
@@ -400,15 +432,28 @@ class _SetupPageState extends State<SetupPage> {
     super.initState();
     _addressController = TextEditingController(text: widget.initialAddress);
     _floorController = TextEditingController(text: widget.initialFloor?.toString() ?? '');
-    _windowController = TextEditingController(text: widget.initialWindowDirection?.toString() ?? '');
   }
 
   @override
   void dispose() {
     _addressController.dispose();
     _floorController.dispose();
-    _windowController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickAddress() async {
+    final selected = await DaumPostcode.pickAddress();
+    if (!mounted) return;
+
+    if (selected == null || selected.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('주소를 불러오지 못했어요. 직접 입력도 가능합니다.')),
+      );
+      return;
+    }
+
+    _addressController.text = selected.trim();
+    setState(() {});
   }
 
   Future<void> _submit() async {
@@ -418,7 +463,6 @@ class _SetupPageState extends State<SetupPage> {
       await widget.onSave(
         newAddress: _addressController.text.trim(),
         newFloor: int.parse(_floorController.text.trim()),
-        newWindowDirection: int.parse(_windowController.text.trim()),
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -431,8 +475,6 @@ class _SetupPageState extends State<SetupPage> {
 
   @override
   Widget build(BuildContext context) {
-    final directionPresets = const [0, 45, 90, 135, 180, 225, 270, 315];
-
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -444,12 +486,24 @@ class _SetupPageState extends State<SetupPage> {
               children: [
                 const Text('내 집 정보 설정', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Color(0xFF124A74))),
                 const SizedBox(height: 6),
-                const Text('주소/층수/창문 방향을 입력하면 맞춤 환기 판단이 가능해요.'),
+                const Text('주소 검색 + 층수만 입력하면 맞춤 환기 판단이 가능해요.'),
                 const SizedBox(height: 14),
-                TextFormField(
-                  controller: _addressController,
-                  decoration: const InputDecoration(labelText: '주소', border: OutlineInputBorder()),
-                  validator: (v) => (v == null || v.trim().isEmpty) ? '주소를 입력하세요.' : null,
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _addressController,
+                        decoration: const InputDecoration(labelText: '주소', border: OutlineInputBorder()),
+                        validator: (v) => (v == null || v.trim().isEmpty) ? '주소를 입력하세요.' : null,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      onPressed: _pickAddress,
+                      icon: const Icon(Icons.search),
+                      label: const Text('주소 찾기'),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 10),
                 TextFormField(
@@ -458,34 +512,10 @@ class _SetupPageState extends State<SetupPage> {
                   decoration: const InputDecoration(labelText: '층수', border: OutlineInputBorder()),
                   validator: (v) => (int.tryParse(v ?? '') ?? 0) <= 0 ? '층수를 확인하세요.' : null,
                 ),
-                const SizedBox(height: 10),
-                TextFormField(
-                  controller: _windowController,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: '창문 방향(각도)', border: OutlineInputBorder()),
-                  validator: (v) {
-                    final n = int.tryParse(v ?? '');
-                    if (n == null || n < 0 || n > 360) return '0~360 사이 숫자를 입력하세요.';
-                    return null;
-                  },
+                const SizedBox(height: 14),
+                const _HintBox(
+                  text: '창문 각도 입력은 제거했습니다.\n상태 탭에서 바람 방향을 분석해 "어느 방향 창문을 여는 게 좋은지" 안내해드려요.',
                 ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final d in directionPresets)
-                      ActionChip(
-                        label: Text('$d° (${directionLabelFromDegree(d)})'),
-                        onPressed: () {
-                          _windowController.text = '$d';
-                          setState(() {});
-                        },
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                _DirectionGuideCard(currentDegree: int.tryParse(_windowController.text.trim())),
                 const SizedBox(height: 14),
                 SizedBox(
                   width: double.infinity,
@@ -504,11 +534,10 @@ class _SetupPageState extends State<SetupPage> {
 }
 
 class StatusPage extends StatefulWidget {
-  const StatusPage({super.key, required this.address, required this.floor, required this.windowDirection});
+  const StatusPage({super.key, required this.address, required this.floor});
 
   final String address;
   final int? floor;
-  final int? windowDirection;
 
   @override
   State<StatusPage> createState() => _StatusPageState();
@@ -526,7 +555,9 @@ class _StatusPageState extends State<StatusPage> {
   @override
   void didUpdateWidget(covariant StatusPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.address != widget.address) _future = _load();
+    if (oldWidget.address != widget.address || oldWidget.floor != widget.floor) {
+      _future = _load();
+    }
   }
 
   Future<StatusSummary> _load() {
@@ -546,7 +577,7 @@ class _StatusPageState extends State<StatusPage> {
 
   @override
   Widget build(BuildContext context) {
-    final hasSetup = widget.address.isNotEmpty && widget.floor != null && widget.windowDirection != null;
+    final hasSetup = widget.address.isNotEmpty && widget.floor != null;
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -590,7 +621,9 @@ class _StatusPageState extends State<StatusPage> {
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Text('AI 스코어: ${band.label}', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: band.color)),
-                      Text(band.description),
+                      Text('권고: ${s.recommendation} (${s.recommendedVentilationMin}분)'),
+                      Text('통합지수: ${s.integratedIndex} (${s.integratedIndexGrade})', style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                      Text('주요 영향물질: ${s.dominantPollutant}', style: const TextStyle(fontSize: 12, color: Colors.black54)),
                       Text('측정소: ${s.stationName}', style: const TextStyle(fontSize: 12, color: Colors.black54)),
                     ]),
                   ),
@@ -601,12 +634,35 @@ class _StatusPageState extends State<StatusPage> {
                   _StatusChip(label: '풍향 ${s.windDirectionText}', icon: Icons.explore),
                   _StatusChip(label: s.windSpeedMs == null ? '풍속 정보없음' : '풍속 ${s.windSpeedMs!.toStringAsFixed(1)}m/s', icon: Icons.air),
                 ]),
-                const SizedBox(height: 12),
+                const SizedBox(height: 10),
+                _HintBox(text: ventilationTipByWind(recommendation: s.recommendation, windText: s.windDirectionText)),
+                const SizedBox(height: 10),
                 const _ScoreLegend(),
                 const SizedBox(height: 12),
+                const Text('현재 판단 이유', style: TextStyle(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 6),
+                for (final reason in s.reasons)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Padding(
+                          padding: EdgeInsets.only(top: 2),
+                          child: Icon(Icons.info_outline, size: 16, color: Color(0xFF2E7DB8)),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(child: Text(reason)),
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 10),
                 _InfoRow(label: 'PM10', value: s.pm10Value),
                 _InfoRow(label: 'PM2.5', value: s.pm25Value),
                 _InfoRow(label: 'O3', value: s.o3Value),
+                _InfoRow(label: 'NO2', value: s.no2Value),
+                _InfoRow(label: 'SO2', value: s.so2Value),
+                _InfoRow(label: 'CO', value: s.coValue),
                 const SizedBox(height: 14),
                 const Text('내 위치/측정소 지도', style: TextStyle(fontWeight: FontWeight.w700)),
                 const SizedBox(height: 8),
@@ -630,26 +686,104 @@ class _StatusPageState extends State<StatusPage> {
                   const SizedBox(height: 10),
                   _InfoRow(label: '주소', value: widget.address),
                   _InfoRow(label: '층수', value: '${widget.floor}층'),
-                  _InfoRow(label: '창문 방향', value: '${widget.windowDirection}° (${directionLabelFromDegree(widget.windowDirection)})'),
                   _InfoRow(label: '시도', value: inferSidoNameFromAddress(widget.address)),
                 ])
-              : const Text('먼저 설정 탭에서 주소/층수/창문방향을 저장해주세요.'),
+              : const Text('먼저 설정 탭에서 주소/층수를 저장해주세요.'),
         ),
       ],
     );
   }
 }
 
-class AlertPage extends StatelessWidget {
-  const AlertPage({super.key});
+class AlertPage extends StatefulWidget {
+  const AlertPage({super.key, required this.address, required this.floor});
+
+  final String address;
+  final int? floor;
+
+  @override
+  State<AlertPage> createState() => _AlertPageState();
+}
+
+class _AlertPageState extends State<AlertPage> {
+  late Future<StatusSummary> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant AlertPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.address != widget.address || oldWidget.floor != widget.floor) {
+      _future = _load();
+    }
+  }
+
+  Future<StatusSummary> _load() {
+    if (widget.address.isEmpty || widget.floor == null) {
+      return Future.error('설정 탭에서 주소/층수 저장 후 확인해주세요.');
+    }
+    return AirGuideApi.fetchStatusSummary(
+      sidoName: inferSidoNameFromAddress(widget.address),
+      address: widget.address,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return ListView(
       padding: const EdgeInsets.all(16),
-      children: const [
-        ListTile(leading: Icon(Icons.warning_amber_rounded, color: Colors.orange), title: Text('창문 닫기 권고'), subtitle: Text('10:42 - 바람이 공장 방향에서 유입 중')),
-        ListTile(leading: Icon(Icons.check_circle_rounded, color: Colors.green), title: Text('환기 골든타임'), subtitle: Text('09:10 - 15분 환기 권장')),
+      children: [
+        FutureBuilder<StatusSummary>(
+          future: _future,
+          builder: (context, snap) {
+            if (snap.connectionState == ConnectionState.waiting) {
+              return const _SoftCard(child: Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator())));
+            }
+            if (snap.hasError) {
+              return _SoftCard(child: Text('${snap.error}'));
+            }
+
+            final s = snap.requireData;
+            final band = scoreBandFrom(s.riskScore);
+
+            return Column(
+              children: [
+                _SoftCard(
+                  child: ListTile(
+                    leading: Icon(Icons.notifications_active_rounded, color: band.color, size: 30),
+                    title: Text('실시간 알림 메시지 (${s.scoreGrade})', style: const TextStyle(fontWeight: FontWeight.w800)),
+                    subtitle: Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        s.notificationMessage,
+                        style: const TextStyle(fontSize: 16),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _SoftCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('알림 기준', style: TextStyle(fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 8),
+                      const Text('매우좋음: 최상의 대기 상태에요. 지금 환기하세요.'),
+                      const Text('좋음: 대기 상태가 좋아요. 5~10분 환기해볼까요?'),
+                      const Text('보통 이하: 대기 상태가 좋지 않아요. 오늘은 창문을 열지 말아요.'),
+                      const SizedBox(height: 8),
+                      Text('현재 AI 스코어 ${s.riskScore} (${s.scoreGrade})'),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
       ],
     );
   }
@@ -674,10 +808,10 @@ class _SoftCard extends StatelessWidget {
   }
 }
 
-class _DirectionGuideCard extends StatelessWidget {
-  const _DirectionGuideCard({required this.currentDegree});
+class _HintBox extends StatelessWidget {
+  const _HintBox({required this.text});
 
-  final int? currentDegree;
+  final String text;
 
   @override
   Widget build(BuildContext context) {
@@ -689,12 +823,7 @@ class _DirectionGuideCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0xFFD2EAFB)),
       ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('창문 방향 가이드', style: TextStyle(fontWeight: FontWeight.w700)),
-        const SizedBox(height: 4),
-        const Text('0° 북 / 90° 동 / 180° 남 / 270° 서'),
-        Text('현재 입력: ${currentDegree ?? '-'}° (${directionLabelFromDegree(currentDegree)})'),
-      ]),
+      child: Text(text),
     );
   }
 }
@@ -772,5 +901,3 @@ class _InfoRow extends StatelessWidget {
     );
   }
 }
-
-

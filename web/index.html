@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html>
 <head>
   <!--
@@ -41,6 +41,29 @@
     For more details:
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
-  <script src="flutter_bootstrap.js" async></script>
+    <script src="//t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
+  <script>
+    window.airGuideOpenPostcode = function () {
+      if (!window.daum || !window.daum.Postcode) {
+        console.warn('Daum postcode script not loaded.');
+        return;
+      }
+      new daum.Postcode({
+        oncomplete: function (data) {
+          var address = data.roadAddress || data.jibunAddress || data.address || '';
+          window.dispatchEvent(
+            new CustomEvent('air-guide-daum-postcode', {
+              detail: {
+                address: address,
+                zonecode: data.zonecode || ''
+              }
+            })
+          );
+        }
+      }).open();
+    };
+  </script>
+<script src="flutter_bootstrap.js" async></script>
 </body>
 </html>
+
