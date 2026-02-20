@@ -17,13 +17,13 @@ KAKAO_REST_API_KEY = os.getenv('KAKAO_REST_API_KEY', '').strip()
 
 AIRKOREA_URL = 'http://apis.data.go.kr/B552584/ArpltnInforInqireSvc/getCtprvnRltmMesureDnsty'
 KMA_ULTRA_NCST_URL = 'http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst'
+KMA_VILAGE_FCST_URL = 'http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst'
 TMS_URL = 'http://apis.data.go.kr/B552584/cleansys/rltmMesureResult'
 BUILDING_TITLE_URL = 'http://apis.data.go.kr/1613000/BldRgstHubService/getBrTitleInfo'
 KAKAO_LOCAL_URL = 'https://dapi.kakao.com/v2/local/search/address.json'
 
 KST = timezone(timedelta(hours=9))
 
-# 대기오염 물질별 통합대기환경지수 보간 구간(근사)
 POLLUTANT_BANDS: dict[str, list[tuple[float, float, int, int]]] = {
     'so2': [(0.0, 0.02, 0, 50), (0.02, 0.05, 51, 100), (0.05, 0.15, 101, 250), (0.15, 1.0, 251, 500)],
     'co': [(0.0, 2.0, 0, 50), (2.0, 9.0, 51, 100), (9.0, 15.0, 101, 250), (15.0, 50.0, 251, 500)],
@@ -42,7 +42,7 @@ POLLUTANT_LABELS = {
     'co': 'CO',
 }
 
-app = FastAPI(title='Air Guide API', version='0.2.0')
+app = FastAPI(title='Air Guide API', version='0.3.0')
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -132,36 +132,55 @@ def _to_float(value: Any) -> float | None:
 def _latest_kma_base_time(now: datetime | None = None) -> tuple[str, str]:
     current = now.astimezone(KST) if now else datetime.now(KST)
     base = current.replace(minute=0, second=0, microsecond=0)
-
     if current.minute < 45:
         base -= timedelta(hours=1)
-
     return base.strftime('%Y%m%d'), base.strftime('%H00')
+
+
+def _latest_vilage_base_time(now: datetime | None = None) -> tuple[str, str]:
+    current = now.astimezone(KST) if now else datetime.now(KST)
+    base_hours = [2, 5, 8, 11, 14, 17, 20, 23]
+
+    selected = None
+    for hour in reversed(base_hours):
+        if current.hour > hour or (current.hour == hour and current.minute >= 10):
+            selected = hour
+            break
+
+    if selected is None:
+        previous = current - timedelta(days=1)
+        return previous.strftime('%Y%m%d'), '2300'
+
+    return current.strftime('%Y%m%d'), f'{selected:02d}00'
 
 
 def _wind_direction_text(degree: float | None) -> str:
     if degree is None:
         return '정보 없음'
-    labels = [
-        '북',
-        '북북동',
-        '북동',
-        '동북동',
-        '동',
-        '동남동',
-        '남동',
-        '남남동',
-        '남',
-        '남남서',
-        '남서',
-        '서남서',
-        '서',
-        '서북서',
-        '북서',
-        '북북서',
-    ]
+    labels = ['북', '북북동', '북동', '동북동', '동', '동남동', '남동', '남남동', '남', '남남서', '남서', '서남서', '서', '서북서', '북서', '북북서']
     idx = int((degree + 11.25) % 360 / 22.5)
     return labels[idx]
+
+
+def _sky_text(sky: int | None) -> str:
+    if sky == 1:
+        return '맑음'
+    if sky == 3:
+        return '구름많음'
+    if sky == 4:
+        return '흐림'
+    return '정보없음'
+
+
+def _pty_text(pty: int | None) -> str:
+    mapping = {
+        0: '강수없음',
+        1: '비',
+        2: '비/눈',
+        3: '눈',
+        4: '소나기',
+    }
+    return mapping.get(pty, '정보없음')
 
 
 def _fetch_air_current(sido_name: str, page_no: int, num_of_rows: int) -> dict[str, Any]:
@@ -252,6 +271,84 @@ def _fetch_weather_current(nx: int, ny: int) -> dict[str, Any]:
             'windDirectionText': _wind_direction_text(wind_dir),
         },
         'rawCategories': category_map,
+    }
+
+
+def _fetch_weather_forecast(nx: int, ny: int, max_slots: int = 10) -> dict[str, Any]:
+    key = _require_key()
+    base_date, base_time = _latest_vilage_base_time()
+    payload = _request_json(
+        KMA_VILAGE_FCST_URL,
+        {
+            'serviceKey': key,
+            'dataType': 'JSON',
+            'numOfRows': 500,
+            'pageNo': 1,
+            'base_date': base_date,
+            'base_time': base_time,
+            'nx': nx,
+            'ny': ny,
+        },
+    )
+    _, items, header = _extract_response(payload)
+
+    by_slot: dict[tuple[str, str], dict[str, Any]] = {}
+    now_key = datetime.now(KST).strftime('%Y%m%d%H%M')
+
+    for item in items:
+        fcst_date = str(item.get('fcstDate') or '')
+        fcst_time = str(item.get('fcstTime') or '')
+        category = str(item.get('category') or '')
+        value = item.get('fcstValue')
+
+        if not fcst_date or not fcst_time:
+            continue
+        if f'{fcst_date}{fcst_time}' < now_key[:10]:
+            continue
+
+        key_slot = (fcst_date, fcst_time)
+        slot = by_slot.setdefault(
+            key_slot,
+            {
+                'fcstDate': fcst_date,
+                'fcstTime': fcst_time,
+                'temperatureC': None,
+                'popPct': None,
+                'sky': None,
+                'pty': None,
+                'windSpeedMs': None,
+                'windDirectionText': '정보없음',
+            },
+        )
+
+        if category == 'TMP':
+            slot['temperatureC'] = _to_float(value)
+        elif category == 'POP':
+            slot['popPct'] = _to_float(value)
+        elif category == 'SKY':
+            n = int(float(value)) if _to_float(value) is not None else None
+            slot['sky'] = _sky_text(n)
+        elif category == 'PTY':
+            n = int(float(value)) if _to_float(value) is not None else None
+            slot['pty'] = _pty_text(n)
+        elif category == 'WSD':
+            slot['windSpeedMs'] = _to_float(value)
+        elif category == 'VEC':
+            slot['windDirectionText'] = _wind_direction_text(_to_float(value))
+
+    forecast = list(by_slot.values())
+    forecast.sort(key=lambda x: (x['fcstDate'], x['fcstTime']))
+    forecast = forecast[:max_slots]
+
+    return {
+        'source': 'kma:getVilageFcst',
+        'baseDate': base_date,
+        'baseTime': base_time,
+        'nx': nx,
+        'ny': ny,
+        'resultCode': header.get('resultCode'),
+        'resultMsg': header.get('resultMsg'),
+        'forecast': forecast,
     }
 
 
@@ -405,6 +502,20 @@ def _score_grade_from_risk(risk: int) -> str:
     return '매우나쁨'
 
 
+def _risk_from_integrated(integrated_index: int) -> int:
+    # 통합지수 구간과 AI 스코어 구간을 일치시켜 불일치(예: 통합 보통 vs AI 좋음)를 줄임.
+    i = max(0, min(500, integrated_index))
+    if i <= 25:
+        return int(round(i * 20 / 25))
+    if i <= 50:
+        return 20 + int(round((i - 25) * 20 / 25))
+    if i <= 100:
+        return 41 + int(round((i - 50) * 19 / 50))
+    if i <= 250:
+        return 61 + int(round((i - 100) * 19 / 150))
+    return 81 + int(round((i - 250) * 19 / 250))
+
+
 def _notification_message(score_grade: str) -> str:
     if score_grade == '매우좋음':
         return '최상의 대기 상태에요. 지금 환기하세요.'
@@ -471,6 +582,20 @@ def _assess_traffic_impact(traffic_level: str | None) -> tuple[int, list[str], s
     return 0, [], normalized
 
 
+def _resolve_grid(nx: int, ny: int, address: str) -> tuple[int, int, dict[str, Any] | None]:
+    used_nx = nx
+    used_ny = ny
+    used_geo: dict[str, Any] | None = None
+
+    geocoded = _kakao_geocode_address(address)
+    if geocoded is not None:
+        lat, lon = geocoded
+        used_nx, used_ny = _to_kma_grid(lat, lon)
+        used_geo = {'lat': lat, 'lon': lon}
+
+    return used_nx, used_ny, used_geo
+
+
 @app.get('/health')
 def health() -> dict[str, Any]:
     return {
@@ -495,6 +620,30 @@ def weather_current(
     ny: int = Query(default=127, ge=1),
 ) -> dict[str, Any]:
     return _fetch_weather_current(nx=nx, ny=ny)
+
+
+@app.get('/weather/summary')
+def weather_summary(
+    nx: int = Query(default=60, ge=1),
+    ny: int = Query(default=127, ge=1),
+    address: str = Query(default=''),
+) -> dict[str, Any]:
+    used_nx, used_ny, used_geo = _resolve_grid(nx=nx, ny=ny, address=address)
+    current = _fetch_weather_current(nx=used_nx, ny=used_ny)
+    forecast = _fetch_weather_forecast(nx=used_nx, ny=used_ny, max_slots=10)
+
+    return {
+        'current': current['observed'],
+        'forecast': forecast['forecast'],
+        'baseDate': forecast['baseDate'],
+        'baseTime': forecast['baseTime'],
+        'grid': {
+            'nx': used_nx,
+            'ny': used_ny,
+            'geocoded': bool(used_geo),
+            'geo': used_geo,
+        },
+    }
 
 
 @app.get('/tms/current')
@@ -559,19 +708,10 @@ def status_summary(
     address: str = Query(default=''),
     traffic_level: str = Query(default='', alias='trafficLevel'),
 ) -> dict[str, Any]:
-    used_nx = nx
-    used_ny = ny
-    used_geo: dict[str, Any] | None = None
-
-    geocoded = _kakao_geocode_address(address)
-    if geocoded is not None:
-        lat, lon = geocoded
-        used_nx, used_ny = _to_kma_grid(lat, lon)
-        used_geo = {'lat': lat, 'lon': lon}
+    used_nx, used_ny, used_geo = _resolve_grid(nx=nx, ny=ny, address=address)
 
     air = _fetch_air_current(sido_name=sido_name, page_no=1, num_of_rows=100)
     weather = _fetch_weather_current(nx=used_nx, ny=used_ny)
-
     selected = _pick_station_by_address(air['items'], address)
 
     pollutant_values = {
@@ -584,10 +724,10 @@ def status_summary(
     }
 
     sub_indices: dict[str, float] = {}
-    for key, value in pollutant_values.items():
-        index_value = _calc_sub_index(value, POLLUTANT_BANDS[key])
+    for pollutant_key, value in pollutant_values.items():
+        index_value = _calc_sub_index(value, POLLUTANT_BANDS[pollutant_key])
         if index_value is not None:
-            sub_indices[key] = round(index_value, 1)
+            sub_indices[pollutant_key] = round(index_value, 1)
 
     dominant_pollutant = ''
     dominant_index = 0.0
@@ -609,13 +749,13 @@ def status_summary(
     if bad_count >= 2:
         reasons.append('나쁨 이상 오염물질이 2개 이상이라 통합점수 가산이 적용됐어요.')
 
+    risk_base = _risk_from_integrated(integrated_index)
+
     wind_speed = _to_float(weather['observed'].get('windSpeedMs'))
     wind_penalty = 0
     if wind_speed is not None and wind_speed <= 1.2:
         wind_penalty = 6
         reasons.append('풍속이 약해 오염물질이 정체될 가능성이 있어요.')
-    elif wind_speed is not None and wind_speed >= 4.0:
-        wind_penalty = -5
 
     tms_penalty = 0
     tms_reasons: list[str] = []
@@ -627,7 +767,7 @@ def status_summary(
 
     traffic_penalty, traffic_reasons, traffic_level_used = _assess_traffic_impact(traffic_level)
 
-    risk_score = max(0, min(100, int(round(integrated_index / 5)) + wind_penalty + tms_penalty + traffic_penalty))
+    risk_score = max(0, min(100, risk_base + wind_penalty + tms_penalty + traffic_penalty))
     score_grade = _score_grade_from_risk(risk_score)
 
     reasons.extend(tms_reasons)
@@ -635,10 +775,7 @@ def status_summary(
     if not reasons:
         reasons.append('주요 대기오염 농도가 비교적 안정적입니다.')
 
-    if risk_score <= 30:
-        recommendation = '환기 권장'
-        ventilation_min = 15
-    elif risk_score <= 45:
+    if risk_score <= 40:
         recommendation = '환기 권장'
         ventilation_min = 10
     elif risk_score <= 60:
