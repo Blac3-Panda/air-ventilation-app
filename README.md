@@ -8,9 +8,9 @@
 </a>
 
 [![Flutter CI Status](https://flutter-dashboard.appspot.com/api/public/build-status-badge?repo=flutter)](https://flutter-dashboard.appspot.com/#/build?repo=flutter)
-[![Discord badge][]][Discord instructions]
-[![Twitter handle][]][Twitter badge]
-[![BlueSky badge][]][BlueSky handle]
+[Discord badge][Discord instructions]
+[Twitter handle][Twitter badge]
+[BlueSky badge][BlueSky handle]
 [![codecov](https://codecov.io/gh/flutter/flutter/branch/master/graph/badge.svg?token=11yDrJU2M2)](https://codecov.io/gh/flutter/flutter)
 [![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/5631/badge)](https://bestpractices.coreinfrastructure.org/projects/5631)
 [![SLSA 1](https://slsa.dev/images/gh-badge-level1.svg)](https://slsa.dev)
@@ -41,8 +41,7 @@ https://policies.google.com/terms
 For example, when installed from GitHub (as opposed to from a prepackaged
 archive), the Flutter tool will download the Dart SDK from Google servers
 immediately when first run, as it is used to execute the `flutter` tool itself.
-This will also occur when Flutter is upgraded (e.g. by running the `flutter
-upgrade` command).
+This will also occur when Flutter is upgraded (e.g. by running the `flutter upgrade` command).
 
 ## About Flutter
 
@@ -55,11 +54,11 @@ your choice.
 
 We want to enable designers to deliver their full creative vision without being
 forced to water it down due to limitations of the underlying framework.
-Flutter's [layered architecture] gives you control over every pixel on the
+Flutter's [layered architecture][layered architecture] gives you control over every pixel on the
 screen and its powerful compositing capabilities let you overlay and animate
 graphics, video, text, and controls without limitation. Flutter includes a full
 [set of widgets][widget catalog] that deliver pixel-perfect experiences whether
-you're building for iOS ([Cupertino]) or other platforms ([Material]), along with
+you're building for iOS ([Cupertino][Cupertino]) or other platforms ([Material][Material]), along with
 support for customizing or creating entirely new visual components.
 
 <p align="center"><img src="https://github.com/flutter/website/blob/main/site/web/assets/images/docs/homepage/reflectly-hero-600px.png?raw=true" alt="Reflectly hero image"></p>
@@ -67,11 +66,11 @@ support for customizing or creating entirely new visual components.
 ### Fast results
 
 Flutter is fast. It's powered by hardware-accelerated 2D graphics
-libraries like [Skia] (which underpins Chrome and Android) and
-[Impeller]. We architected Flutter to
+libraries like [Skia][Skia] (which underpins Chrome and Android) and
+[Impeller][Impeller]. We architected Flutter to
 support glitch-free, jank-free graphics at the native speed of your device.
 
-Flutter code is powered by the world-class [Dart programming language], which enables
+Flutter code is powered by the world-class [Dart programming language][Dart programming language], which enables
 compilation to 32-bit and 64-bit ARM machine code for iOS and Android,
 JavaScript and WebAssembly for the web, as well as Intel x64 and ARM
 for desktop devices.
@@ -83,12 +82,12 @@ for desktop devices.
 Flutter offers [stateful hot reload][Hot reload], allowing you to make changes to your code
 and see the results instantly without restarting your app or losing its state.
 
-[![Hot reload animation][]][Hot reload]
+[Hot reload animation][Hot reload]
 
 ### Extensible and open model
 
 Flutter works with any development tool (or none at all), and also includes
-editor plug-ins for both [Visual Studio Code] and [IntelliJ / Android Studio].
+editor plug-ins for both [Visual Studio Code][Visual Studio Code] and [IntelliJ / Android Studio][IntelliJ / Android Studio].
 Flutter provides [tens of thousands of packages][Flutter packages] to speed your
 development, regardless of your target platform. And accessing other native code
 is easy, with support for both FFI ([on Android][Android FFI], [on iOS][iOS FFI],
@@ -98,6 +97,8 @@ is easy, with support for both FFI ([on Android][Android FFI], [on iOS][iOS FFI]
 Flutter is a fully open-source project, and we welcome contributions.
 Information on how to get started can be found in our
 [contributor guide](CONTRIBUTING.md).
+
+hi
 
 [flutter.dev]: https://flutter.dev
 [Discord instructions]: ./docs/contributing/Chat.md
