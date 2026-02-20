@@ -98,8 +98,6 @@ Flutter is a fully open-source project, and we welcome contributions.
 Information on how to get started can be found in our
 [contributor guide](CONTRIBUTING.md).
 
-hi
-
 [flutter.dev]: https://flutter.dev
 [Discord instructions]: ./docs/contributing/Chat.md
 [Discord badge]: https://img.shields.io/discord/608014603317936148?logo=discord
