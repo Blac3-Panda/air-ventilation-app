@@ -1,5 +1,5 @@
-﻿import os
-import math
+﻿import math
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -17,13 +17,32 @@ KAKAO_REST_API_KEY = os.getenv('KAKAO_REST_API_KEY', '').strip()
 
 AIRKOREA_URL = 'http://apis.data.go.kr/B552584/ArpltnInforInqireSvc/getCtprvnRltmMesureDnsty'
 KMA_ULTRA_NCST_URL = 'http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst'
-TMS_METAL_URL = 'https://apis.data.go.kr/1480523/MetalMeasuringResultService/MetalService'
+TMS_URL = 'http://apis.data.go.kr/B552584/cleansys/rltmMesureResult'
 BUILDING_TITLE_URL = 'http://apis.data.go.kr/1613000/BldRgstHubService/getBrTitleInfo'
 KAKAO_LOCAL_URL = 'https://dapi.kakao.com/v2/local/search/address.json'
 
 KST = timezone(timedelta(hours=9))
 
-app = FastAPI(title='Air Guide API', version='0.1.0')
+# 대기오염 물질별 통합대기환경지수 보간 구간(근사)
+POLLUTANT_BANDS: dict[str, list[tuple[float, float, int, int]]] = {
+    'so2': [(0.0, 0.02, 0, 50), (0.02, 0.05, 51, 100), (0.05, 0.15, 101, 250), (0.15, 1.0, 251, 500)],
+    'co': [(0.0, 2.0, 0, 50), (2.0, 9.0, 51, 100), (9.0, 15.0, 101, 250), (15.0, 50.0, 251, 500)],
+    'o3': [(0.0, 0.03, 0, 50), (0.03, 0.09, 51, 100), (0.09, 0.15, 101, 250), (0.15, 0.6, 251, 500)],
+    'no2': [(0.0, 0.03, 0, 50), (0.03, 0.06, 51, 100), (0.06, 0.2, 101, 250), (0.2, 2.0, 251, 500)],
+    'pm10': [(0.0, 30.0, 0, 50), (30.0, 80.0, 51, 100), (80.0, 150.0, 101, 250), (150.0, 600.0, 251, 500)],
+    'pm25': [(0.0, 15.0, 0, 50), (15.0, 35.0, 51, 100), (35.0, 75.0, 101, 250), (75.0, 500.0, 251, 500)],
+}
+
+POLLUTANT_LABELS = {
+    'pm25': 'PM2.5',
+    'pm10': 'PM10',
+    'o3': 'O3',
+    'no2': 'NO2',
+    'so2': 'SO2',
+    'co': 'CO',
+}
+
+app = FastAPI(title='Air Guide API', version='0.2.0')
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -69,7 +88,7 @@ def _extract_response(data: dict[str, Any]) -> tuple[dict[str, Any], list[dict[s
 
     header = response.get('header', {}) if isinstance(response.get('header'), dict) else {}
     code = str(header.get('resultCode', '00'))
-    if code != '00':
+    if code not in {'00', '0'}:
         msg = header.get('resultMsg', 'Unknown upstream error')
         raise HTTPException(status_code=502, detail=f'Upstream error {code}: {msg}')
 
@@ -90,6 +109,17 @@ def _extract_response(data: dict[str, Any]) -> tuple[dict[str, Any], list[dict[s
     return body, normalized_items, header
 
 
+def _extract_items_fallback(data: dict[str, Any]) -> list[dict[str, Any]]:
+    if 'response' in data and isinstance(data['response'], dict):
+        _, items, _ = _extract_response(data)
+        return items
+
+    if 'items' in data and isinstance(data['items'], list):
+        return [x for x in data['items'] if isinstance(x, dict)]
+
+    return []
+
+
 def _to_float(value: Any) -> float | None:
     if value in (None, '-', ''):
         return None
@@ -103,7 +133,6 @@ def _latest_kma_base_time(now: datetime | None = None) -> tuple[str, str]:
     current = now.astimezone(KST) if now else datetime.now(KST)
     base = current.replace(minute=0, second=0, microsecond=0)
 
-    # 초단기실황은 보통 매시 40분 이후 안정적으로 조회 가능하므로 이전 시각 fallback.
     if current.minute < 45:
         base -= timedelta(hours=1)
 
@@ -113,7 +142,24 @@ def _latest_kma_base_time(now: datetime | None = None) -> tuple[str, str]:
 def _wind_direction_text(degree: float | None) -> str:
     if degree is None:
         return '정보 없음'
-    labels = ['북', '북북동', '북동', '동북동', '동', '동남동', '남동', '남남동', '남', '남남서', '남서', '서남서', '서', '서북서', '북서', '북북서']
+    labels = [
+        '북',
+        '북북동',
+        '북동',
+        '동북동',
+        '동',
+        '동남동',
+        '남동',
+        '남남동',
+        '남',
+        '남남서',
+        '남서',
+        '서남서',
+        '서',
+        '서북서',
+        '북서',
+        '북북서',
+    ]
     idx = int((degree + 11.25) % 360 / 22.5)
     return labels[idx]
 
@@ -140,6 +186,9 @@ def _fetch_air_current(sido_name: str, page_no: int, num_of_rows: int) -> dict[s
             'pm10Value': item.get('pm10Value'),
             'pm25Value': item.get('pm25Value'),
             'o3Value': item.get('o3Value'),
+            'no2Value': item.get('no2Value'),
+            'so2Value': item.get('so2Value'),
+            'coValue': item.get('coValue'),
             'khaiValue': item.get('khaiValue'),
             'airQualityLevel': item.get('informGrade') or item.get('khaiGrade'),
         }
@@ -206,15 +255,19 @@ def _fetch_weather_current(nx: int, ny: int) -> dict[str, Any]:
     }
 
 
-def _extract_items_fallback(data: dict[str, Any]) -> list[dict[str, Any]]:
-    if 'response' in data and isinstance(data['response'], dict):
-        _, items, _ = _extract_response(data)
-        return items
+def _fetch_tms_items(page_no: int = 1, num_of_rows: int = 100) -> list[dict[str, Any]]:
+    key = _require_key()
+    payload = _request_json(
+        TMS_URL,
+        {
+            'serviceKey': key,
+            'pageNo': page_no,
+            'numOfRows': num_of_rows,
+            'type': 'json',
+        },
+    )
+    return _extract_items_fallback(payload)
 
-    if 'items' in data and isinstance(data['items'], list):
-        return [x for x in data['items'] if isinstance(x, dict)]
-
-    return []
 
 def _kakao_geocode_address(address: str | None) -> tuple[float, float] | None:
     if not address or not address.strip() or not KAKAO_REST_API_KEY:
@@ -251,7 +304,6 @@ def _kakao_geocode_address(address: str | None) -> tuple[float, float] | None:
 
 
 def _to_kma_grid(lat: float, lon: float) -> tuple[int, int]:
-    # 기상청 LCC DFS 변환 (위경도 -> nx, ny)
     re = 6371.00877 / 5.0
     slat1 = math.radians(30.0)
     slat2 = math.radians(60.0)
@@ -277,6 +329,7 @@ def _to_kma_grid(lat: float, lon: float) -> tuple[int, int]:
     x = int(ra * math.sin(theta) + xo + 0.5)
     y = int(ro - ra * math.cos(theta) + yo + 0.5)
     return x, y
+
 
 def _extract_location_tokens(address: str) -> list[str]:
     cleaned = address.replace(',', ' ').replace('  ', ' ').strip()
@@ -317,6 +370,107 @@ def _pick_station_by_address(items: list[dict[str, Any]], address: str | None) -
 
     return items[0]
 
+
+def _calc_sub_index(value: float | None, bands: list[tuple[float, float, int, int]]) -> float | None:
+    if value is None:
+        return None
+    v = max(0.0, value)
+    for bp_lo, bp_hi, i_lo, i_hi in bands:
+        if v <= bp_hi:
+            if bp_hi == bp_lo:
+                return float(i_hi)
+            return ((i_hi - i_lo) / (bp_hi - bp_lo)) * (v - bp_lo) + i_lo
+    return float(bands[-1][3])
+
+
+def _grade_from_iaqi(index_value: float) -> str:
+    if index_value <= 50:
+        return '좋음'
+    if index_value <= 100:
+        return '보통'
+    if index_value <= 250:
+        return '나쁨'
+    return '매우나쁨'
+
+
+def _score_grade_from_risk(risk: int) -> str:
+    if risk <= 20:
+        return '매우좋음'
+    if risk <= 40:
+        return '좋음'
+    if risk <= 60:
+        return '보통'
+    if risk <= 80:
+        return '나쁨'
+    return '매우나쁨'
+
+
+def _notification_message(score_grade: str) -> str:
+    if score_grade == '매우좋음':
+        return '최상의 대기 상태에요. 지금 환기하세요.'
+    if score_grade == '좋음':
+        return '대기 상태가 좋아요. 5~10분 환기해볼까요?'
+    return '대기 상태가 좋지 않아요. 오늘은 창문을 열지 말아요.'
+
+
+def _assess_tms_impact(items: list[dict[str, Any]], sido_name: str) -> tuple[int, list[str]]:
+    if not items:
+        return 0, []
+
+    pollutant_pairs = [
+        ('nox_mesure_value', 'nox_exhst_perm_stdr_value', 'NOx'),
+        ('sox_mesure_value', 'sox_exhst_perm_stdr_value', 'SOx'),
+        ('tsp_mesure_value', 'tsp_exhst_perm_stdr_value', 'TSP'),
+        ('hcl_mesure_value', 'hcl_exhst_perm_stdr_value', 'HCl'),
+        ('hf_mesure_value', 'hf_exhst_perm_stdr_value', 'HF'),
+        ('nh3_mesure_value', 'nh3_exhst_perm_stdr_value', 'NH3'),
+    ]
+
+    max_ratio = 0.0
+    max_name = ''
+
+    for item in items:
+        area_name = str(item.get('area_nm') or '')
+        if sido_name and sido_name not in area_name:
+            continue
+
+        for mesure_key, stdr_key, label in pollutant_pairs:
+            measured = _to_float(item.get(mesure_key))
+            standard = _to_float(item.get(stdr_key))
+            if measured is None or standard is None or standard <= 0:
+                continue
+            ratio = measured / standard
+            if ratio > max_ratio:
+                max_ratio = ratio
+                max_name = label
+
+    if max_ratio >= 1.0:
+        return 14, [f'인근 굴뚝(TMS) 배출 {max_name}가 허용기준 대비 높아 환기 위험이 커졌어요.']
+    if max_ratio >= 0.8:
+        return 8, [f'인근 굴뚝(TMS) 배출 {max_name}가 허용기준에 근접해 주의가 필요해요.']
+    return 0, []
+
+
+def _assess_traffic_impact(traffic_level: str | None) -> tuple[int, list[str], str]:
+    normalized = (traffic_level or '').strip().lower()
+    source = 'input'
+
+    if normalized not in {'low', 'normal', 'medium', 'high'}:
+        hour = datetime.now(KST).hour
+        normalized = 'high' if hour in {7, 8, 9, 17, 18, 19} else 'normal'
+        source = 'estimated'
+
+    if normalized == 'high':
+        if source == 'estimated':
+            return 7, ['출퇴근 혼잡 시간대로 추정되어 도로 배출가스 영향이 커졌어요.'], normalized
+        return 10, ['도로 교통 정체로 배출가스 유입 가능성이 높아요.'], normalized
+
+    if normalized in {'medium', 'normal'}:
+        return 2, [], normalized
+
+    return 0, [], normalized
+
+
 @app.get('/health')
 def health() -> dict[str, Any]:
     return {
@@ -348,20 +502,9 @@ def tms_current(
     page_no: int = Query(default=1, alias='pageNo', ge=1),
     num_of_rows: int = Query(default=20, alias='numOfRows', ge=1, le=200),
 ) -> dict[str, Any]:
-    key = _require_key()
-    payload = _request_json(
-        TMS_METAL_URL,
-        {
-            'serviceKey': key,
-            'pageNo': page_no,
-            'numOfRows': num_of_rows,
-            'apiType': 'json',
-        },
-    )
-
-    items = _extract_items_fallback(payload)
+    items = _fetch_tms_items(page_no=page_no, num_of_rows=num_of_rows)
     return {
-        'source': 'tms:MetalMeasuringResultService/MetalService',
+        'source': 'tms:cleansys/rltmMesureResult',
         'pageNo': page_no,
         'numOfRows': num_of_rows,
         'count': len(items),
@@ -414,6 +557,7 @@ def status_summary(
     nx: int = Query(default=60, ge=1),
     ny: int = Query(default=127, ge=1),
     address: str = Query(default=''),
+    traffic_level: str = Query(default='', alias='trafficLevel'),
 ) -> dict[str, Any]:
     used_nx = nx
     used_ny = ny
@@ -428,46 +572,114 @@ def status_summary(
     air = _fetch_air_current(sido_name=sido_name, page_no=1, num_of_rows=100)
     weather = _fetch_weather_current(nx=used_nx, ny=used_ny)
 
-    first = _pick_station_by_address(air['items'], address)
-    pm25 = _to_float(first.get('pm25Value'))
-    wind_speed = weather['observed'].get('windSpeedMs')
+    selected = _pick_station_by_address(air['items'], address)
 
-    risk = 55
-    if pm25 is not None:
-        if pm25 <= 15:
-            risk = 20
-        elif pm25 <= 35:
-            risk = 45
-        else:
-            risk = 75
+    pollutant_values = {
+        'pm25': _to_float(selected.get('pm25Value')),
+        'pm10': _to_float(selected.get('pm10Value')),
+        'o3': _to_float(selected.get('o3Value')),
+        'no2': _to_float(selected.get('no2Value')),
+        'so2': _to_float(selected.get('so2Value')),
+        'co': _to_float(selected.get('coValue')),
+    }
 
-    if isinstance(wind_speed, float) and wind_speed >= 3:
-        risk = max(0, risk - 5)
+    sub_indices: dict[str, float] = {}
+    for key, value in pollutant_values.items():
+        index_value = _calc_sub_index(value, POLLUTANT_BANDS[key])
+        if index_value is not None:
+            sub_indices[key] = round(index_value, 1)
 
-    if risk <= 34:
-        level = '환기 권장'
-        duration_min = 10
-    elif risk <= 64:
-        level = '짧게 환기'
-        duration_min = 5
+    dominant_pollutant = ''
+    dominant_index = 0.0
+    if sub_indices:
+        dominant_pollutant, dominant_index = max(sub_indices.items(), key=lambda x: x[1])
+
+    bad_count = sum(1 for x in sub_indices.values() if x >= 101)
+    bonus = 75 if bad_count >= 3 else (50 if bad_count == 2 else 0)
+
+    integrated_index = min(500, int(round(dominant_index + bonus)))
+    iaqi_grade = _grade_from_iaqi(integrated_index)
+
+    reasons: list[str] = []
+    if dominant_pollutant:
+        value = pollutant_values.get(dominant_pollutant)
+        if value is not None and integrated_index > 50:
+            reasons.append(f'{POLLUTANT_LABELS[dominant_pollutant]} 농도({value}) 영향으로 대기질 점수가 상승했어요.')
+
+    if bad_count >= 2:
+        reasons.append('나쁨 이상 오염물질이 2개 이상이라 통합점수 가산이 적용됐어요.')
+
+    wind_speed = _to_float(weather['observed'].get('windSpeedMs'))
+    wind_penalty = 0
+    if wind_speed is not None and wind_speed <= 1.2:
+        wind_penalty = 6
+        reasons.append('풍속이 약해 오염물질이 정체될 가능성이 있어요.')
+    elif wind_speed is not None and wind_speed >= 4.0:
+        wind_penalty = -5
+
+    tms_penalty = 0
+    tms_reasons: list[str] = []
+    try:
+        tms_items = _fetch_tms_items(page_no=1, num_of_rows=100)
+        tms_penalty, tms_reasons = _assess_tms_impact(tms_items, sido_name=sido_name)
+    except HTTPException:
+        tms_penalty, tms_reasons = 0, []
+
+    traffic_penalty, traffic_reasons, traffic_level_used = _assess_traffic_impact(traffic_level)
+
+    risk_score = max(0, min(100, int(round(integrated_index / 5)) + wind_penalty + tms_penalty + traffic_penalty))
+    score_grade = _score_grade_from_risk(risk_score)
+
+    reasons.extend(tms_reasons)
+    reasons.extend(traffic_reasons)
+    if not reasons:
+        reasons.append('주요 대기오염 농도가 비교적 안정적입니다.')
+
+    if risk_score <= 30:
+        recommendation = '환기 권장'
+        ventilation_min = 15
+    elif risk_score <= 45:
+        recommendation = '환기 권장'
+        ventilation_min = 10
+    elif risk_score <= 60:
+        recommendation = '짧게 환기'
+        ventilation_min = 5
     else:
-        level = '창문 닫기'
-        duration_min = 0
+        recommendation = '창문 닫기'
+        ventilation_min = 0
 
     return {
-        'riskScore': risk,
-        'recommendation': level,
-        'recommendedVentilationMin': duration_min,
+        'riskScore': risk_score,
+        'scoreGrade': score_grade,
+        'integratedIndex': integrated_index,
+        'integratedIndexGrade': iaqi_grade,
+        'dominantPollutant': POLLUTANT_LABELS.get(dominant_pollutant, dominant_pollutant),
+        'recommendation': recommendation,
+        'recommendedVentilationMin': ventilation_min,
+        'reasons': reasons,
+        'notificationMessage': _notification_message(score_grade),
         'air': {
             'sidoName': air['sidoName'],
-            'stationName': first.get('stationName'),
+            'stationName': selected.get('stationName'),
             'selectedByAddress': bool(address),
-            'dataTime': first.get('dataTime'),
-            'pm10Value': first.get('pm10Value'),
-            'pm25Value': first.get('pm25Value'),
-            'o3Value': first.get('o3Value'),
+            'dataTime': selected.get('dataTime'),
+            'pm10Value': selected.get('pm10Value'),
+            'pm25Value': selected.get('pm25Value'),
+            'o3Value': selected.get('o3Value'),
+            'no2Value': selected.get('no2Value'),
+            'so2Value': selected.get('so2Value'),
+            'coValue': selected.get('coValue'),
+            'subIndices': sub_indices,
         },
         'weather': weather['observed'],
+        'traffic': {
+            'level': traffic_level_used,
+            'penalty': traffic_penalty,
+        },
+        'tms': {
+            'penalty': tms_penalty,
+            'reasons': tms_reasons,
+        },
         'grid': {
             'nx': used_nx,
             'ny': used_ny,
@@ -475,17 +687,3 @@ def status_summary(
             'geo': used_geo,
         },
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
