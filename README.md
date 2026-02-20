@@ -74,7 +74,7 @@ flutter run -d web-server --web-port 8080 --dart-define=KAKAO_JS_KEY=YOUR_KAKAO_
 브라우저 접속:
 http://127.0.0.1:8080
 
-## 트러블슈팅
+## **트러블슈팅**
 hasDataGoKrKey: false가 나올 때
 backend/.env 위치/키 값 확인 후 백엔드 서버 재시작 필요.
 
@@ -89,7 +89,7 @@ GitHub push 시 non-fast-forward 에러
 git clone https://github.com/Blac3-Panda/air-ventilation-app.git
 cd air-ventilation-app
 
-## 프로젝트 회고
+## **프로젝트 회고**
 공공 API를 단순 조회하는 수준에서 끝내지 않고,
 주소 기반 위치 해석과 환기 판단 로직까지 연결하면서 “실사용 가능한 형태”로 발전시켰습니다.
 다음 단계에서는 측정소 거리 기반 정밀 매칭과 알림 자동화로 완성도를 더 높일 계획입니다.
