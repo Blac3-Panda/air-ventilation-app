@@ -46,12 +46,12 @@ git clone https://github.com/Blac3-Panda/air-ventilation-app.git
 cd air-ventilation-app
 ```
 
-2. 백엔드 실행
+2. 백엔드 실행 (터미널 1)
 
-```bash
-cd backend
+```powershell
+cd C:\Users\heeso\Desktop\air_guide_app\backend
 python -m venv .venv
-.\.venv\Scripts\activate
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
@@ -62,9 +62,9 @@ DATA_GO_KR_SERVICE_KEY=YOUR_DATA_GO_KR_KEY
 KAKAO_REST_API_KEY=YOUR_KAKAO_REST_KEY
 ```
 
-서버 실행:
+백엔드 서버 실행:
 
-```bash
+```powershell
 uvicorn app.main:app --reload --port 8000
 ```
 
@@ -74,9 +74,10 @@ uvicorn app.main:app --reload --port 8000
 http://127.0.0.1:8000/health
 ```
 
-3. 프론트 실행
+3. 프론트 실행 (터미널 2)
 
-```bash
+```powershell
+cd C:\Users\heeso\Desktop\air_guide_app
 flutter pub get
 flutter run -d web-server --web-port 8080 --dart-define=KAKAO_JS_KEY=YOUR_KAKAO_JS_KEY
 ```
@@ -86,6 +87,11 @@ flutter run -d web-server --web-port 8080 --dart-define=KAKAO_JS_KEY=YOUR_KAKAO_
 ```text
 http://127.0.0.1:8080
 ```
+
+4. 종료 방법
+
+- 백엔드 터미널: `Ctrl + C`
+- 프론트 터미널: `q` 또는 `Ctrl + C`
 
 ## 트러블슈팅
 - hasDataGoKrKey가 `false`로 나올 때
@@ -101,3 +107,4 @@ http://127.0.0.1:8080
 공공 API를 단순 조회하는 수준에서 끝내지 않고,
 주소 기반 위치 해석과 환기 판단 로직까지 연결해 실사용 가능한 형태로 발전시켰습니다.
 다음 단계에서는 측정소 거리 기반 정밀 매칭과 알림 자동화로 완성도를 높일 계획입니다.
+
