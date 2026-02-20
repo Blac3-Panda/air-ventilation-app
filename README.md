@@ -1,5 +1,7 @@
-<a href="https://flutter.dev/">
-  <h1 align="center">
+<<<<<<< HEAD
+`<a href="https://flutter.dev/">`
+
+<h1 align="center">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="https://storage.googleapis.com/cms-storage-bucket/6e19fee6b47b36ca613f.png">
       <img alt="Flutter" src="https://storage.googleapis.com/cms-storage-bucket/c823e53b3a1a7b0d36a9.png">
@@ -98,6 +100,8 @@ Flutter is a fully open-source project, and we welcome contributions.
 Information on how to get started can be found in our
 [contributor guide](CONTRIBUTING.md).
 
+=======
+
 [flutter.dev]: https://flutter.dev
 [Discord instructions]: ./docs/contributing/Chat.md
 [Discord badge]: https://img.shields.io/discord/608014603317936148?logo=discord
@@ -124,3 +128,64 @@ Information on how to get started can be found in our
 [platform channels]: https://docs.flutter.dev/platform-integration/platform-channels
 [interop example]: https://github.com/flutter/flutter/tree/main/examples/platform_channel
 [Impeller]: https://docs.flutter.dev/perf/impeller
+# Air Ventilation App
+
+## 📌 프로젝트 개요
+
+실시간 외부 대기질 데이터를 활용하여 사용자에게 적절한 환기 시점을 안내하는 모바일 애플리케이션입니다.
+
+단순 정보 제공이 아닌, 사용자의 행동(환기 여부)을 결정하는 기준을 제공하는 것을 목표로 개발했습니다.
+
+---
+
+## 🛠 기술 스택
+
+- Flutter
+- REST API (공공 대기질 API)
+- JSON Parsing
+- Async / Await
+- 상태관리 (Provider)
+- HTTP 통신 (http 패키지)
+
+---
+
+## 🏗 앱 구조
+
+1. 외부 API 호출 (비동기 처리)
+2. JSON 데이터 파싱
+3. 환기 가능 여부 판단 로직 적용
+4. 상태 업데이트 후 UI 반영
+5. 예외 상황(네트워크 오류, API 에러) 처리
+
+---
+
+## 🔥 주요 기능
+
+- 실시간 대기질 데이터 조회
+- 위치 기반 데이터 반영
+- 환기 적정 여부 자동 판단
+- 로딩 상태 및 에러 UI 처리
+
+---
+
+## 🧩 트러블슈팅 경험
+
+- API 호출 시 403 에러 발생 → 인증키 인코딩 문제 해결
+- 비동기 처리 중 setState 호출 타이밍 오류 해결
+- 상태관리 구조 개선으로 UI 리렌더링 문제 해결
+
+---
+
+## 📈 배운 점
+
+- 모바일 앱에서의 API 통신 구조 이해
+- 비동기 처리와 상태관리의 중요성 체감
+- 실제 서비스 운영 시 광고 및 수익화 구조 고민
+
+>>>>>>> 196c53bee96ec9ee29baa5d002d598200425543c
+>>>>>>>
+>>>>>>
+>>>>>
+>>>>
+>>>
+>>
