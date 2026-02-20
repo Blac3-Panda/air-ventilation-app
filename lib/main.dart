@@ -14,6 +14,9 @@ const String kKakaoJsKey = String.fromEnvironment(
   'KAKAO_JS_KEY',
   defaultValue: '',
 );
+const Color kPrimaryColor = Color(0xFF2F80ED);
+const Color kSecondaryColor = Color(0xFF27AE60);
+const Color kAccentColor = Color(0xFFB2F5EA);
 
 void main() {
   runApp(const AirGuideApp());
@@ -464,8 +467,12 @@ class AirGuideApp extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         textTheme: GoogleFonts.notoSansKrTextTheme(),
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF3AA7F2)),
-        scaffoldBackgroundColor: const Color(0xFFF4FAFF),
+        colorScheme: const ColorScheme.light(
+          primary: kPrimaryColor,
+          secondary: kSecondaryColor,
+          tertiary: kAccentColor,
+        ),
+        scaffoldBackgroundColor: const Color(0xFFF5FAFF),
       ),
       home: const HomePage(),
     );
@@ -561,7 +568,7 @@ class _HomePageState extends State<HomePage> {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [Color(0xFFDFF3FF), Color(0xFFF3FAFF), Color(0xFFFFFFFF)],
+            colors: [Color(0xFFEAF4FF), Color(0xFFF5FCFF), Color(0xFFFFFFFF)],
           ),
         ),
         child: SafeArea(
@@ -647,13 +654,14 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
-  final _formKey = GlobalKey<FormState>();
+  final _basicFormKey = GlobalKey<FormState>();
   late final TextEditingController _addressController;
   late final TextEditingController _floorController;
 
   late bool _notifyGood;
   late bool _notifyBad;
   late bool _notifyTraffic;
+  String _languageCode = 'ko';
 
   bool saving = false;
 
@@ -692,7 +700,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!_basicFormKey.currentState!.validate()) return;
     setState(() => saving = true);
     try {
       await widget.onSave(
@@ -711,10 +719,18 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
+  Future<void> _openCategory({required String title, required Widget child}) {
+    return Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => _SettingsCategoryPage(title: title, child: child),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: const Color(0xFFE9F6FF),
+      color: const Color(0xFFEAF7FF),
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -722,146 +738,270 @@ class _SettingsPageState extends State<SettingsPage> {
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 760),
               child: _SoftCard(
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      const Text(
-                        '설정',
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF124A74),
-                        ),
-                        textAlign: TextAlign.center,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    const Text(
+                      '설정',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF1F4E8C),
                       ),
-                      const SizedBox(height: 10),
-                      ExpansionTile(
-                        shape: Border.all(color: Colors.transparent),
-                        collapsedShape: Border.all(color: Colors.transparent),
-                        title: const Text('기본설정', textAlign: TextAlign.center),
-                        children: [
-                          Row(
+                    ),
+                    const SizedBox(height: 10),
+                    _SettingsMenuTile(
+                      icon: Icons.tune_rounded,
+                      title: '기본설정',
+                      subtitle: '주소/층수',
+                      onTap: () => _openCategory(
+                        title: '기본설정',
+                        child: Form(
+                          key: _basicFormKey,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Expanded(
-                                child: TextFormField(
-                                  controller: _addressController,
-                                  decoration: const InputDecoration(
-                                    labelText: '주소',
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  validator: (v) =>
-                                      (v == null || v.trim().isEmpty)
-                                      ? '주소를 입력하세요.'
-                                      : null,
+                              TextFormField(
+                                controller: _addressController,
+                                decoration: const InputDecoration(
+                                  labelText: '주소',
+                                  border: OutlineInputBorder(),
+                                ),
+                                validator: (v) =>
+                                    (v == null || v.trim().isEmpty)
+                                    ? '주소를 입력하세요.'
+                                    : null,
+                              ),
+                              const SizedBox(height: 10),
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  onPressed: _pickAddress,
+                                  icon: const Icon(Icons.search),
+                                  label: const Text('주소 찾기'),
                                 ),
                               ),
-                              const SizedBox(width: 8),
-                              OutlinedButton.icon(
-                                onPressed: _pickAddress,
-                                icon: const Icon(Icons.search),
-                                label: const Text('주소 찾기'),
+                              const SizedBox(height: 10),
+                              TextFormField(
+                                controller: _floorController,
+                                keyboardType: TextInputType.number,
+                                decoration: const InputDecoration(
+                                  labelText: '층수',
+                                  border: OutlineInputBorder(),
+                                ),
+                                validator: (v) =>
+                                    (int.tryParse(v ?? '') ?? 0) <= 0
+                                    ? '층수를 확인하세요.'
+                                    : null,
+                              ),
+                              const SizedBox(height: 14),
+                              SizedBox(
+                                width: double.infinity,
+                                child: FilledButton(
+                                  onPressed: saving ? null : _submit,
+                                  child: Text(saving ? '저장 중...' : '저장'),
+                                ),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 10),
-                          TextFormField(
-                            controller: _floorController,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              labelText: '층수',
-                              border: OutlineInputBorder(),
-                            ),
-                            validator: (v) => (int.tryParse(v ?? '') ?? 0) <= 0
-                                ? '층수를 확인하세요.'
-                                : null,
-                          ),
-                          const SizedBox(height: 12),
-                        ],
-                      ),
-                      ExpansionTile(
-                        shape: Border.all(color: Colors.transparent),
-                        collapsedShape: Border.all(color: Colors.transparent),
-                        title: const Text('알림', textAlign: TextAlign.center),
-                        children: [
-                          SwitchListTile(
-                            contentPadding: EdgeInsets.zero,
-                            title: const Text('환기 권장 알림 (좋음 이상)'),
-                            value: _notifyGood,
-                            onChanged: (v) => setState(() => _notifyGood = v),
-                          ),
-                          SwitchListTile(
-                            contentPadding: EdgeInsets.zero,
-                            title: const Text('대기 주의 알림 (보통 이하)'),
-                            value: _notifyBad,
-                            onChanged: (v) => setState(() => _notifyBad = v),
-                          ),
-                          SwitchListTile(
-                            contentPadding: EdgeInsets.zero,
-                            title: const Text('도로/오염원 경고 알림'),
-                            value: _notifyTraffic,
-                            onChanged: (v) =>
-                                setState(() => _notifyTraffic = v),
-                          ),
-                        ],
-                      ),
-                      ExpansionTile(
-                        shape: Border.all(color: Colors.transparent),
-                        collapsedShape: Border.all(color: Colors.transparent),
-                        title: const Text('언어', textAlign: TextAlign.center),
-                        children: [
-                          SegmentedButton<String>(
-                            segments: const [
-                              ButtonSegment<String>(
-                                value: 'ko',
-                                label: Text('한국어'),
-                              ),
-                              ButtonSegment<String>(
-                                value: 'en',
-                                label: Text('English'),
-                              ),
-                            ],
-                            selected: {'ko'},
-                            onSelectionChanged: (_) {},
-                          ),
-                          const SizedBox(height: 8),
-                          const Text(
-                            '한국어 중심 UI',
-                            style: TextStyle(color: Colors.black54),
-                          ),
-                          const SizedBox(height: 8),
-                        ],
-                      ),
-                      ExpansionTile(
-                        shape: Border.all(color: Colors.transparent),
-                        collapsedShape: Border.all(color: Colors.transparent),
-                        title: const Text('앱정보', textAlign: TextAlign.center),
-                        children: const [
-                          Text(
-                            'Air Guide',
-                            style: TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                          SizedBox(height: 6),
-                          Text('Version 1.0.0'),
-                          SizedBox(height: 8),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton(
-                          onPressed: saving ? null : _submit,
-                          child: Text(saving ? '저장 중...' : '설정 저장'),
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                    _SettingsMenuTile(
+                      icon: Icons.notifications_active_rounded,
+                      title: '알림',
+                      subtitle: '알림 카테고리',
+                      onTap: () => _openCategory(
+                        title: '알림',
+                        child: Column(
+                          children: [
+                            SwitchListTile(
+                              title: const Text('환기 권장 알림 (좋음 이상)'),
+                              value: _notifyGood,
+                              onChanged: (v) => setState(() => _notifyGood = v),
+                            ),
+                            SwitchListTile(
+                              title: const Text('대기 주의 알림 (보통 이하)'),
+                              value: _notifyBad,
+                              onChanged: (v) => setState(() => _notifyBad = v),
+                            ),
+                            SwitchListTile(
+                              title: const Text('도로/오염원 경고 알림'),
+                              value: _notifyTraffic,
+                              onChanged: (v) =>
+                                  setState(() => _notifyTraffic = v),
+                            ),
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton(
+                                onPressed: saving ? null : _submit,
+                                child: Text(saving ? '저장 중...' : '저장'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    _SettingsMenuTile(
+                      icon: Icons.language_rounded,
+                      title: '언어',
+                      subtitle: '앱 언어',
+                      onTap: () => _openCategory(
+                        title: '언어',
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SegmentedButton<String>(
+                              segments: const [
+                                ButtonSegment<String>(
+                                  value: 'ko',
+                                  label: Text('한국어'),
+                                ),
+                                ButtonSegment<String>(
+                                  value: 'en',
+                                  label: Text('English'),
+                                ),
+                              ],
+                              selected: {_languageCode},
+                              onSelectionChanged: (value) {
+                                setState(() => _languageCode = value.first);
+                              },
+                            ),
+                            const SizedBox(height: 8),
+                            const Text(
+                              '한국어 중심 UI',
+                              style: TextStyle(color: Colors.black54),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    _SettingsMenuTile(
+                      icon: Icons.info_outline_rounded,
+                      title: '앱정보',
+                      subtitle: '버전 및 안내',
+                      onTap: () => _openCategory(
+                        title: '앱정보',
+                        child: const Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Air Guide',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 18,
+                              ),
+                            ),
+                            SizedBox(height: 6),
+                            Text('Version 1.0.0'),
+                            SizedBox(height: 10),
+                            Text('실시간 공공데이터 기반 환기 안내 앱입니다.'),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _SettingsMenuTile extends StatelessWidget {
+  const _SettingsMenuTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: const Color(0xFFD8EBFF)),
+          ),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 18,
+                backgroundColor: const Color(0xFFE8F2FF),
+                child: Icon(icon, color: kPrimaryColor),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.black54,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded, color: Color(0xFF6C8DB0)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SettingsCategoryPage extends StatelessWidget {
+  const _SettingsCategoryPage({required this.title, required this.child});
+
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5FAFF),
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        foregroundColor: const Color(0xFF1F4E8C),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+      ),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 760),
+                child: _SoftCard(child: child),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -910,7 +1050,7 @@ class _StatusPageState extends State<StatusPage> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: const Color(0xFFDFF2FF),
+      color: const Color(0xFFEAF4FF),
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -965,7 +1105,7 @@ class _StatusPageState extends State<StatusPage> {
                         gradient: const LinearGradient(
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
-                          colors: [Color(0xFF0A4E6D), Color(0xFF031E2B)],
+                          colors: [Color(0xFF2F80ED), Color(0xFF1F4E8C)],
                         ),
                         border: Border.all(
                           color: const Color(
@@ -980,7 +1120,7 @@ class _StatusPageState extends State<StatusPage> {
                             children: [
                               const Icon(
                                 Icons.place_rounded,
-                                color: Color(0xFF7EE1FF),
+                                color: kAccentColor,
                                 size: 18,
                               ),
                               const SizedBox(width: 4),
@@ -1040,7 +1180,7 @@ class _StatusPageState extends State<StatusPage> {
                                     const Text(
                                       'AIR SCORE',
                                       style: TextStyle(
-                                        color: Color(0xFF9AC7DC),
+                                        color: Color(0xFFD4F4EE),
                                         fontSize: 12,
                                       ),
                                     ),
@@ -1186,7 +1326,7 @@ class _WeatherPageState extends State<WeatherPage> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: const Color(0xFFE9F6FF),
+      color: const Color(0xFFEAF7FF),
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -1379,10 +1519,10 @@ class _WeatherPageState extends State<WeatherPage> {
                                         vertical: 12,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: const Color(0xFFEFF8FF),
+                                        color: const Color(0xFFEFFFFA),
                                         borderRadius: BorderRadius.circular(14),
                                         border: Border.all(
-                                          color: const Color(0xFFD2EAFB),
+                                          color: const Color(0xFFCFECE4),
                                         ),
                                       ),
                                       child: Column(
@@ -1462,10 +1602,10 @@ class _SoftCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(26),
-        border: Border.all(color: const Color(0xFFD6EAF9)),
+        border: Border.all(color: const Color(0xFFD8EBFF)),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x180D5E92),
+            color: Color(0x14327FBF),
             blurRadius: 18,
             offset: Offset(0, 8),
           ),
@@ -1488,9 +1628,9 @@ class _HintBox extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFEFF8FF),
+        color: const Color(0xFFEFFFFA),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFD2EAFB)),
+        border: Border.all(color: const Color(0xFFCFECE4)),
       ),
       child: Text(text),
     );
@@ -1508,7 +1648,7 @@ class _StatusChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: const Color(0xFFEAF6FF),
+        color: const Color(0xFFEAF7FF),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
