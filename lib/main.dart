@@ -1,4 +1,3 @@
-﻿
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -6,11 +5,15 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'widgets/daum_postcode.dart';
 import 'widgets/kakao_map_embed.dart';
 
-const String kKakaoJsKey = String.fromEnvironment('KAKAO_JS_KEY', defaultValue: '');
+const String kKakaoJsKey = String.fromEnvironment(
+  'KAKAO_JS_KEY',
+  defaultValue: '',
+);
 
 void main() {
   runApp(const AirGuideApp());
@@ -88,7 +91,8 @@ class StatusSummary {
       integratedIndexGrade: '${json['integratedIndexGrade'] ?? '정보없음'}',
       dominantPollutant: '${json['dominantPollutant'] ?? '-'}',
       recommendation: '${json['recommendation'] ?? '정보 없음'}',
-      recommendedVentilationMin: int.tryParse('${json['recommendedVentilationMin']}') ?? 0,
+      recommendedVentilationMin:
+          int.tryParse('${json['recommendedVentilationMin']}') ?? 0,
       pm10Value: '${air['pm10Value'] ?? '-'}',
       pm25Value: '${air['pm25Value'] ?? '-'}',
       o3Value: '${air['o3Value'] ?? '-'}',
@@ -128,7 +132,9 @@ class ForecastItem {
   final String windDirectionText;
 
   String get label {
-    if (fcstDate.length < 8 || fcstTime.length < 4) return '$fcstDate $fcstTime';
+    if (fcstDate.length < 8 || fcstTime.length < 4) {
+      return '$fcstDate $fcstTime';
+    }
     final mm = fcstDate.substring(4, 6);
     final dd = fcstDate.substring(6, 8);
     final hh = fcstTime.substring(0, 2);
@@ -183,9 +189,9 @@ class WeatherSummary {
 
     final list = (json['forecast'] is List)
         ? (json['forecast'] as List)
-            .whereType<Map<String, dynamic>>()
-            .map(ForecastItem.fromJson)
-            .toList()
+              .whereType<Map<String, dynamic>>()
+              .map(ForecastItem.fromJson)
+              .toList()
         : <ForecastItem>[];
 
     return WeatherSummary(
@@ -208,6 +214,7 @@ class WeatherSummary {
     );
   }
 }
+
 class AirGuideApi {
   static List<String> get baseUrls => kIsWeb
       ? const ['http://localhost:8000', 'http://127.0.0.1:8000']
@@ -268,7 +275,9 @@ class AirGuideApi {
     return WeatherSummary.fromJson(decoded);
   }
 
-  static Future<Uri> _firstReachableUri(Uri Function(String baseUrl) builder) async {
+  static Future<Uri> _firstReachableUri(
+    Uri Function(String baseUrl) builder,
+  ) async {
     final errors = <String>[];
 
     for (final base in baseUrls) {
@@ -411,6 +420,39 @@ String ventilationTipByWind({
   return '바람 반대쪽 창문부터 짧게 열어 교차 환기하세요.';
 }
 
+String formatForecastDate(String yyyymmdd) {
+  if (yyyymmdd.length != 8) return yyyymmdd;
+  final mm = yyyymmdd.substring(4, 6);
+  final dd = yyyymmdd.substring(6, 8);
+  return '$mm/$dd';
+}
+
+String formatForecastHour(String hhmm) {
+  if (hhmm.length < 2) return hhmm;
+  final hh = int.tryParse(hhmm.substring(0, 2)) ?? 0;
+  final ampm = hh < 12 ? '오전' : '오후';
+  final h12 = hh % 12 == 0 ? 12 : hh % 12;
+  return '$ampm ${h12.toString()}시';
+}
+
+IconData forecastIconFor(ForecastItem item) {
+  if (item.pty.contains('비') || item.pty.contains('소나기')) {
+    return Icons.umbrella_rounded;
+  }
+  if (item.pty.contains('눈')) return Icons.ac_unit_rounded;
+  if (item.sky.contains('맑음')) return Icons.wb_sunny_rounded;
+  if (item.sky.contains('흐림')) return Icons.cloud_rounded;
+  if (item.sky.contains('구름')) return Icons.cloud_queue_rounded;
+  return Icons.wb_cloudy_rounded;
+}
+
+Map<String, double?> minMaxTemp(List<ForecastItem> items) {
+  final temps = items.map((e) => e.temperatureC).whereType<double>().toList();
+  if (temps.isEmpty) return {'min': null, 'max': null};
+  temps.sort();
+  return {'min': temps.first, 'max': temps.last};
+}
+
 class AirGuideApp extends StatelessWidget {
   const AirGuideApp({super.key});
 
@@ -429,6 +471,7 @@ class AirGuideApp extends StatelessWidget {
     );
   }
 }
+
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -533,7 +576,9 @@ class _HomePageState extends State<HomePage> {
                       height: 42,
                       decoration: const BoxDecoration(
                         shape: BoxShape.circle,
-                        gradient: LinearGradient(colors: [Color(0xFF70C6FF), Color(0xFF2E9DEB)]),
+                        gradient: LinearGradient(
+                          colors: [Color(0xFF70C6FF), Color(0xFF2E9DEB)],
+                        ),
                       ),
                       child: const Icon(Icons.air_rounded, color: Colors.white),
                     ),
@@ -541,7 +586,11 @@ class _HomePageState extends State<HomePage> {
                     const Expanded(
                       child: Text(
                         'Air Guide',
-                        style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: Color(0xFF114A73)),
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF114A73),
+                        ),
                       ),
                     ),
                   ],
@@ -558,7 +607,10 @@ class _HomePageState extends State<HomePage> {
         destinations: const [
           NavigationDestination(icon: Icon(Icons.air_rounded), label: '상태'),
           NavigationDestination(icon: Icon(Icons.cloud_outlined), label: '날씨'),
-          NavigationDestination(icon: Icon(Icons.settings_rounded), label: '설정'),
+          NavigationDestination(
+            icon: Icon(Icons.settings_rounded),
+            label: '설정',
+          ),
         ],
       ),
     );
@@ -587,7 +639,8 @@ class SettingsPage extends StatefulWidget {
     required bool newNotifyGood,
     required bool newNotifyBad,
     required bool newNotifyTraffic,
-  }) onSave;
+  })
+  onSave;
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -608,7 +661,9 @@ class _SettingsPageState extends State<SettingsPage> {
   void initState() {
     super.initState();
     _addressController = TextEditingController(text: widget.initialAddress);
-    _floorController = TextEditingController(text: widget.initialFloor?.toString() ?? '');
+    _floorController = TextEditingController(
+      text: widget.initialFloor?.toString() ?? '',
+    );
     _notifyGood = widget.initialNotifyGood;
     _notifyBad = widget.initialNotifyBad;
     _notifyTraffic = widget.initialNotifyTraffic;
@@ -648,9 +703,9 @@ class _SettingsPageState extends State<SettingsPage> {
         newNotifyTraffic: _notifyTraffic,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('설정을 저장했습니다.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('설정을 저장했습니다.')));
     } finally {
       if (mounted) setState(() => saving = false);
     }
@@ -658,77 +713,160 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _SoftCard(
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('기본 설정', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Color(0xFF124A74))),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: _addressController,
-                        decoration: const InputDecoration(labelText: '주소', border: OutlineInputBorder()),
-                        validator: (v) => (v == null || v.trim().isEmpty) ? '주소를 입력하세요.' : null,
+    return Container(
+      color: const Color(0xFFE9F6FF),
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 760),
+              child: _SoftCard(
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      const Text(
+                        '설정',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF124A74),
+                        ),
+                        textAlign: TextAlign.center,
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    OutlinedButton.icon(
-                      onPressed: _pickAddress,
-                      icon: const Icon(Icons.search),
-                      label: const Text('주소 찾기'),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                TextFormField(
-                  controller: _floorController,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: '층수', border: OutlineInputBorder()),
-                  validator: (v) => (int.tryParse(v ?? '') ?? 0) <= 0 ? '층수를 확인하세요.' : null,
-                ),
-                const SizedBox(height: 16),
-                const Text('알림 카테고리', style: TextStyle(fontWeight: FontWeight.w700)),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('환기 권장 알림 (좋음 이상)'),
-                  value: _notifyGood,
-                  onChanged: (v) => setState(() => _notifyGood = v),
-                ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('대기 주의 알림 (보통 이하)'),
-                  value: _notifyBad,
-                  onChanged: (v) => setState(() => _notifyBad = v),
-                ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('도로/오염원 경고 알림'),
-                  value: _notifyTraffic,
-                  onChanged: (v) => setState(() => _notifyTraffic = v),
-                ),
-                const SizedBox(height: 10),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: saving ? null : _submit,
-                    child: Text(saving ? '저장 중...' : '설정 저장'),
+                      const SizedBox(height: 10),
+                      ExpansionTile(
+                        shape: Border.all(color: Colors.transparent),
+                        collapsedShape: Border.all(color: Colors.transparent),
+                        title: const Text('기본설정', textAlign: TextAlign.center),
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextFormField(
+                                  controller: _addressController,
+                                  decoration: const InputDecoration(
+                                    labelText: '주소',
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  validator: (v) =>
+                                      (v == null || v.trim().isEmpty)
+                                      ? '주소를 입력하세요.'
+                                      : null,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              OutlinedButton.icon(
+                                onPressed: _pickAddress,
+                                icon: const Icon(Icons.search),
+                                label: const Text('주소 찾기'),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          TextFormField(
+                            controller: _floorController,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: '층수',
+                              border: OutlineInputBorder(),
+                            ),
+                            validator: (v) => (int.tryParse(v ?? '') ?? 0) <= 0
+                                ? '층수를 확인하세요.'
+                                : null,
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                      ),
+                      ExpansionTile(
+                        shape: Border.all(color: Colors.transparent),
+                        collapsedShape: Border.all(color: Colors.transparent),
+                        title: const Text('알림', textAlign: TextAlign.center),
+                        children: [
+                          SwitchListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: const Text('환기 권장 알림 (좋음 이상)'),
+                            value: _notifyGood,
+                            onChanged: (v) => setState(() => _notifyGood = v),
+                          ),
+                          SwitchListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: const Text('대기 주의 알림 (보통 이하)'),
+                            value: _notifyBad,
+                            onChanged: (v) => setState(() => _notifyBad = v),
+                          ),
+                          SwitchListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: const Text('도로/오염원 경고 알림'),
+                            value: _notifyTraffic,
+                            onChanged: (v) =>
+                                setState(() => _notifyTraffic = v),
+                          ),
+                        ],
+                      ),
+                      ExpansionTile(
+                        shape: Border.all(color: Colors.transparent),
+                        collapsedShape: Border.all(color: Colors.transparent),
+                        title: const Text('언어', textAlign: TextAlign.center),
+                        children: [
+                          SegmentedButton<String>(
+                            segments: const [
+                              ButtonSegment<String>(
+                                value: 'ko',
+                                label: Text('한국어'),
+                              ),
+                              ButtonSegment<String>(
+                                value: 'en',
+                                label: Text('English'),
+                              ),
+                            ],
+                            selected: {'ko'},
+                            onSelectionChanged: (_) {},
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            '한국어 중심 UI',
+                            style: TextStyle(color: Colors.black54),
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+                      ),
+                      ExpansionTile(
+                        shape: Border.all(color: Colors.transparent),
+                        collapsedShape: Border.all(color: Colors.transparent),
+                        title: const Text('앱정보', textAlign: TextAlign.center),
+                        children: const [
+                          Text(
+                            'Air Guide',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          SizedBox(height: 6),
+                          Text('Version 1.0.0'),
+                          SizedBox(height: 8),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton(
+                          onPressed: saving ? null : _submit,
+                          child: Text(saving ? '저장 중...' : '설정 저장'),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
+
 class StatusPage extends StatefulWidget {
   const StatusPage({super.key, required this.address, required this.floor});
 
@@ -751,7 +889,8 @@ class _StatusPageState extends State<StatusPage> {
   @override
   void didUpdateWidget(covariant StatusPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.address != widget.address || oldWidget.floor != widget.floor) {
+    if (oldWidget.address != widget.address ||
+        oldWidget.floor != widget.floor) {
       _future = _load();
     }
   }
@@ -770,80 +909,225 @@ class _StatusPageState extends State<StatusPage> {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        FutureBuilder<StatusSummary>(
-          future: _future,
-          builder: (context, snap) {
-            if (snap.connectionState == ConnectionState.waiting) {
-              return const _SoftCard(child: Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator())));
-            }
-            if (snap.hasError) {
-              return _SoftCard(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  const Text('실시간 상태를 가져오지 못했어요', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 8),
-                  Text('${snap.error}'),
-                  const SizedBox(height: 10),
-                  FilledButton(onPressed: _refresh, child: const Text('다시 시도')),
-                ]),
-              );
-            }
+    return Container(
+      color: const Color(0xFFDFF2FF),
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 760),
+              child: FutureBuilder<StatusSummary>(
+                future: _future,
+                builder: (context, snap) {
+                  if (snap.connectionState == ConnectionState.waiting) {
+                    return const _SoftCard(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 40),
+                        child: Center(child: CircularProgressIndicator()),
+                      ),
+                    );
+                  }
+                  if (snap.hasError) {
+                    return _SoftCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          const Text(
+                            '실시간 상태를 가져오지 못했어요',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 8),
+                          Text('${snap.error}', textAlign: TextAlign.center),
+                          const SizedBox(height: 12),
+                          FilledButton(
+                            onPressed: _refresh,
+                            child: const Text('다시 시도'),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
 
-            final s = snap.requireData;
-            final band = scoreBandFrom(s.riskScore);
+                  final s = snap.requireData;
+                  final band = scoreBandFrom(s.riskScore);
 
-            return _SoftCard(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [
-                  const Text('현재 환기 상태', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: Color(0xFF124A74))),
-                  const Spacer(),
-                  TextButton.icon(onPressed: _refresh, icon: const Icon(Icons.refresh), label: const Text('새로고침')),
-                ]),
-                const SizedBox(height: 10),
-                Row(children: [
-                  CircleAvatar(
-                    radius: 42,
-                    backgroundColor: band.color,
-                    child: Text('${s.riskScore}', style: const TextStyle(fontSize: 28, color: Colors.white, fontWeight: FontWeight.w800)),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text('AI 스코어: ${band.label}', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: band.color)),
-                      Text('권고: ${s.recommendation} (${s.recommendedVentilationMin}분)'),
-                      Text('통합지수: ${s.integratedIndex} (${s.integratedIndexGrade})', style: const TextStyle(fontSize: 12, color: Colors.black54)),
-                      Text('주요 영향물질: ${s.dominantPollutant}', style: const TextStyle(fontSize: 12, color: Colors.black54)),
-                      Text('측정소: ${s.stationName}', style: const TextStyle(fontSize: 12, color: Colors.black54)),
-                    ]),
-                  ),
-                ]),
-                const SizedBox(height: 10),
-                Wrap(spacing: 8, runSpacing: 8, children: [
-                  _StatusChip(label: s.pm25Chip, icon: Icons.blur_on),
-                  _StatusChip(label: '풍향 ${s.windDirectionText}', icon: Icons.explore),
-                  _StatusChip(label: s.windSpeedMs == null ? '풍속 정보없음' : '풍속 ${s.windSpeedMs!.toStringAsFixed(1)}m/s', icon: Icons.air),
-                ]),
-                const SizedBox(height: 10),
-                _HintBox(text: ventilationTipByWind(recommendation: s.recommendation, windText: s.windDirectionText)),
-                if (s.riskScore >= 41 && s.reasons.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  const Text('판단 이유', style: TextStyle(fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 6),
-                  for (final reason in s.reasons.take(2))
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: Text('- $reason'),
+                  return _SoftCard(
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(24),
+                        gradient: const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [Color(0xFF0A4E6D), Color(0xFF031E2B)],
+                        ),
+                        border: Border.all(
+                          color: const Color(
+                            0xFF2BC8FF,
+                          ).withValues(alpha: 0.45),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.place_rounded,
+                                color: Color(0xFF7EE1FF),
+                                size: 18,
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  s.stationName,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                              IconButton(
+                                onPressed: _refresh,
+                                icon: const Icon(
+                                  Icons.refresh,
+                                  color: Colors.white,
+                                ),
+                                tooltip: '새로고침',
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              SizedBox(
+                                width: 230,
+                                height: 230,
+                                child: CircularProgressIndicator(
+                                  value:
+                                      (100 - s.riskScore).clamp(0, 100) / 100,
+                                  strokeWidth: 16,
+                                  backgroundColor: Colors.white.withValues(
+                                    alpha: 0.15,
+                                  ),
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    band.color,
+                                  ),
+                                ),
+                              ),
+                              Container(
+                                width: 184,
+                                height: 184,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF071926),
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(
+                                    color: Colors.white.withValues(alpha: 0.16),
+                                  ),
+                                ),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Text(
+                                      'AIR SCORE',
+                                      style: TextStyle(
+                                        color: Color(0xFF9AC7DC),
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      s.riskScore.toString().padLeft(3, '0'),
+                                      style: const TextStyle(
+                                        fontSize: 44,
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 14,
+                                        vertical: 5,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: band.color,
+                                        borderRadius: BorderRadius.circular(
+                                          999,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        band.label,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            alignment: WrapAlignment.center,
+                            children: [
+                              _StatusChip(
+                                label: s.pm25Chip,
+                                icon: Icons.blur_on,
+                              ),
+                              _StatusChip(
+                                label: '풍향 ${s.windDirectionText}',
+                                icon: Icons.explore,
+                              ),
+                              _StatusChip(
+                                label: s.windSpeedMs == null
+                                    ? '풍속 정보없음'
+                                    : '풍속 ${s.windSpeedMs!.toStringAsFixed(1)}m/s',
+                                icon: Icons.air,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            '권고: ${s.recommendation} (${s.recommendedVentilationMin}분)',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            '통합지수 ${s.integratedIndex} · ${s.dominantPollutant}',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.75),
+                              fontSize: 12,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
                     ),
-                ],
-                const SizedBox(height: 12),
-                const _ScoreLegend(),
-              ]),
-            );
-          },
-        ),
-      ],
+                  );
+                },
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -870,7 +1154,8 @@ class _WeatherPageState extends State<WeatherPage> {
   @override
   void didUpdateWidget(covariant WeatherPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.address != widget.address || oldWidget.floor != widget.floor) {
+    if (oldWidget.address != widget.address ||
+        oldWidget.floor != widget.floor) {
       _future = _load();
     }
   }
@@ -884,103 +1169,288 @@ class _WeatherPageState extends State<WeatherPage> {
 
   void _refresh() => setState(() => _future = _load());
 
+  Future<void> _openExternalMap() async {
+    final query = widget.address.trim();
+    if (query.isEmpty) return;
+    final uri = Uri.parse(
+      'https://map.kakao.com/?q=${Uri.encodeComponent(query)}',
+    );
+    final opened = await launchUrl(uri, mode: LaunchMode.platformDefault);
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('지도 열기에 실패했어요.')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        FutureBuilder<WeatherSummary>(
-          future: _future,
-          builder: (context, snap) {
-            if (snap.connectionState == ConnectionState.waiting) {
-              return const _SoftCard(child: Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator())));
-            }
-            if (snap.hasError) {
-              return _SoftCard(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  const Text('날씨 정보를 가져오지 못했어요', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 8),
-                  Text('${snap.error}'),
-                  const SizedBox(height: 10),
-                  FilledButton(onPressed: _refresh, child: const Text('다시 시도')),
-                ]),
-              );
-            }
+    return Container(
+      color: const Color(0xFFE9F6FF),
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 760),
+              child: FutureBuilder<WeatherSummary>(
+                future: _future,
+                builder: (context, snap) {
+                  if (snap.connectionState == ConnectionState.waiting) {
+                    return const _SoftCard(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 40),
+                        child: Center(child: CircularProgressIndicator()),
+                      ),
+                    );
+                  }
+                  if (snap.hasError) {
+                    return _SoftCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          const Text(
+                            '날씨 정보를 가져오지 못했어요',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 8),
+                          Text('${snap.error}', textAlign: TextAlign.center),
+                          const SizedBox(height: 10),
+                          FilledButton(
+                            onPressed: _refresh,
+                            child: const Text('다시 시도'),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
 
-            final w = snap.requireData;
-            return Column(
-              children: [
-                _SoftCard(
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Row(children: [
-                      const Text('현재 날씨', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Color(0xFF124A74))),
-                      const Spacer(),
-                      TextButton.icon(onPressed: _refresh, icon: const Icon(Icons.refresh), label: const Text('새로고침')),
-                    ]),
-                    _InfoRow(label: '기온', value: w.temperatureC == null ? '-' : '${w.temperatureC!.toStringAsFixed(1)}°C'),
-                    _InfoRow(label: '습도', value: w.humidityPct == null ? '-' : '${w.humidityPct!.toStringAsFixed(0)}%'),
-                    _InfoRow(label: '강수', value: w.rainfallMm == null ? '-' : '${w.rainfallMm!.toStringAsFixed(1)} mm'),
-                    _InfoRow(label: '풍향', value: w.windDirectionText),
-                    _InfoRow(label: '풍속', value: w.windSpeedMs == null ? '-' : '${w.windSpeedMs!.toStringAsFixed(1)} m/s'),
-                    const SizedBox(height: 8),
-                    const Text('위치 기반 날씨 지도', style: TextStyle(fontWeight: FontWeight.w700)),
-                    const SizedBox(height: 8),
-                    KakaoMapEmbed(
+                  final w = snap.requireData;
+                  final minMax = minMaxTemp(w.forecast);
+
+                  final Widget mapWidget;
+                  if (!kIsWeb) {
+                    mapWidget = const _HintBox(
+                      text: '앱 모드에서는 내장 지도가 제한될 수 있어요. 아래 버튼으로 카카오 지도를 열어주세요.',
+                    );
+                  } else if (kKakaoJsKey.trim().isEmpty) {
+                    mapWidget = const _HintBox(
+                      text: 'KAKAO_JS_KEY가 없어 내장 지도를 표시할 수 없습니다.',
+                    );
+                  } else {
+                    mapWidget = KakaoMapEmbed(
                       kakaoJsKey: kKakaoJsKey,
                       address: widget.address,
                       stationName: widget.address,
-                      height: 220,
-                    ),
-                  ]),
-                ),
-                const SizedBox(height: 12),
-                _SoftCard(
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    const Text('단기예보', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Color(0xFF124A74))),
-                    const SizedBox(height: 6),
-                    Text('기준시각: ${w.baseDate} ${w.baseTime}', style: const TextStyle(fontSize: 12, color: Colors.black54)),
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      height: 132,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: w.forecast.length,
-                        separatorBuilder: (context, index) => const SizedBox(width: 8),
-                        itemBuilder: (context, i) {
-                          final f = w.forecast[i];
-                          return Container(
-                            width: 150,
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFEFF8FF),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: const Color(0xFFD2EAFB)),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                      height: 260,
+                    );
+                  }
+
+                  return Column(
+                    children: [
+                      _SoftCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Row(
                               children: [
-                                Text(f.label, style: const TextStyle(fontWeight: FontWeight.w700)),
-                                const SizedBox(height: 6),
-                                Text('기온 ${f.temperatureC == null ? '-' : '${f.temperatureC!.toStringAsFixed(1)}°'}'),
-                                Text('강수확률 ${f.popPct == null ? '-' : '${f.popPct!.toStringAsFixed(0)}%'}'),
-                                Text('하늘 ${f.sky}'),
-                                Text('강수형태 ${f.pty}'),
+                                const SizedBox(width: 40),
+                                const Expanded(
+                                  child: Text(
+                                    '날씨',
+                                    style: TextStyle(
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.w800,
+                                      color: Color(0xFF124A74),
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                                IconButton(
+                                  onPressed: _refresh,
+                                  icon: const Icon(Icons.refresh),
+                                  tooltip: '새로고침',
+                                ),
                               ],
                             ),
-                          );
-                        },
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              alignment: WrapAlignment.center,
+                              children: [
+                                _StatusChip(
+                                  label: w.temperatureC == null
+                                      ? '기온 -'
+                                      : '기온 ${w.temperatureC!.toStringAsFixed(1)}°C',
+                                  icon: Icons.thermostat,
+                                ),
+                                _StatusChip(
+                                  label: w.humidityPct == null
+                                      ? '습도 -'
+                                      : '습도 ${w.humidityPct!.toStringAsFixed(0)}%',
+                                  icon: Icons.water_drop_outlined,
+                                ),
+                                _StatusChip(
+                                  label: w.windSpeedMs == null
+                                      ? '풍속 -'
+                                      : '풍속 ${w.windSpeedMs!.toStringAsFixed(1)}m/s',
+                                  icon: Icons.air,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            const Text(
+                              '위치 기반 날씨 지도',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF124A74),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            mapWidget,
+                            const SizedBox(height: 8),
+                            TextButton.icon(
+                              onPressed: _openExternalMap,
+                              icon: const Icon(Icons.open_in_new_rounded),
+                              label: const Text('카카오 지도에서 열기'),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ]),
-                ),
-              ],
-            );
-          },
-        ),
-      ],
+                      const SizedBox(height: 12),
+                      _SoftCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            const Text(
+                              '단기예보',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF124A74),
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              '${formatForecastDate(w.baseDate)}\n${formatForecastHour(w.baseTime)} 기준',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.black54,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              '최저 ${minMax['min'] == null ? '-' : '${minMax['min']!.toStringAsFixed(1)}°'} / 최고 ${minMax['max'] == null ? '-' : '${minMax['max']!.toStringAsFixed(1)}°'}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 10),
+                            if (w.forecast.isEmpty)
+                              const Text('예보 데이터 없음')
+                            else
+                              SizedBox(
+                                height: 184,
+                                child: ListView.separated(
+                                  scrollDirection: Axis.horizontal,
+                                  itemCount: w.forecast.length,
+                                  separatorBuilder: (context, index) =>
+                                      const SizedBox(width: 10),
+                                  itemBuilder: (context, i) {
+                                    final f = w.forecast[i];
+                                    final condition =
+                                        (f.pty != '없음' &&
+                                            f.pty != '0' &&
+                                            f.pty != '정보없음')
+                                        ? f.pty
+                                        : f.sky;
+                                    return Container(
+                                      width: 132,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 12,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFEFF8FF),
+                                        borderRadius: BorderRadius.circular(14),
+                                        border: Border.all(
+                                          color: const Color(0xFFD2EAFB),
+                                        ),
+                                      ),
+                                      child: Column(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Text(
+                                            formatForecastDate(f.fcstDate),
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                            textAlign: TextAlign.center,
+                                          ),
+                                          Text(
+                                            formatForecastHour(f.fcstTime),
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.black54,
+                                            ),
+                                            textAlign: TextAlign.center,
+                                          ),
+                                          Icon(
+                                            forecastIconFor(f),
+                                            size: 28,
+                                            color: const Color(0xFF2E9DEB),
+                                          ),
+                                          Text(
+                                            condition,
+                                            textAlign: TextAlign.center,
+                                          ),
+                                          Text(
+                                            f.temperatureC == null
+                                                ? '-'
+                                                : '${f.temperatureC!.toStringAsFixed(1)}°C',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                            textAlign: TextAlign.center,
+                                          ),
+                                          Text(
+                                            '강수확률 ${f.popPct == null ? '-' : '${f.popPct!.toStringAsFixed(0)}%'}',
+                                            style: const TextStyle(
+                                              fontSize: 11,
+                                              color: Colors.black54,
+                                            ),
+                                            textAlign: TextAlign.center,
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
+
 class _SoftCard extends StatelessWidget {
   const _SoftCard({required this.child});
 
@@ -990,9 +1460,16 @@ class _SoftCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.94),
-        borderRadius: BorderRadius.circular(18),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(26),
         border: Border.all(color: const Color(0xFFD6EAF9)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x180D5E92),
+            blurRadius: 18,
+            offset: Offset(0, 8),
+          ),
+        ],
       ),
       padding: const EdgeInsets.all(16),
       child: child,
@@ -1030,67 +1507,14 @@ class _StatusChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(color: const Color(0xFFEAF6FF), borderRadius: BorderRadius.circular(999)),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(icon, size: 16), const SizedBox(width: 4), Text(label)]),
-    );
-  }
-}
-
-class _ScoreLegend extends StatelessWidget {
-  const _ScoreLegend();
-
-  @override
-  Widget build(BuildContext context) {
-    final items = [
-      (label: '0-20 매우좋음', color: const Color(0xFF46B8FF)),
-      (label: '21-40 좋음', color: const Color(0xFF22A6F2)),
-      (label: '41-60 보통', color: const Color(0xFFFF9800)),
-      (label: '61-80 나쁨', color: const Color(0xFFFF7043)),
-      (label: '81-100 매우나쁨', color: const Color(0xFFE53935)),
-    ];
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('AI 스코어 기준', style: TextStyle(fontWeight: FontWeight.w700)),
-        const SizedBox(height: 6),
-        Wrap(
-          spacing: 10,
-          runSpacing: 6,
-          children: [
-            for (final i in items)
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(width: 10, height: 10, decoration: BoxDecoration(color: i.color, shape: BoxShape.circle)),
-                  const SizedBox(width: 4),
-                  Text(i.label, style: const TextStyle(fontSize: 12)),
-                ],
-              ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-class _InfoRow extends StatelessWidget {
-  const _InfoRow({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEAF6FF),
+        borderRadius: BorderRadius.circular(999),
+      ),
       child: Row(
-        children: [
-          SizedBox(width: 90, child: Text(label, style: const TextStyle(color: Colors.black54))),
-          Expanded(child: Text(value, style: const TextStyle(fontWeight: FontWeight.w600))),
-        ],
+        mainAxisSize: MainAxisSize.min,
+        children: [Icon(icon, size: 16), const SizedBox(width: 4), Text(label)],
       ),
     );
   }
 }
-
