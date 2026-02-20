@@ -1,11 +1,11 @@
-﻿import 'dart:convert';
+﻿
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import 'widgets/daum_postcode.dart';
 import 'widgets/kakao_map_embed.dart';
@@ -106,6 +106,108 @@ class StatusSummary {
   }
 }
 
+class ForecastItem {
+  const ForecastItem({
+    required this.fcstDate,
+    required this.fcstTime,
+    required this.temperatureC,
+    required this.popPct,
+    required this.sky,
+    required this.pty,
+    required this.windSpeedMs,
+    required this.windDirectionText,
+  });
+
+  final String fcstDate;
+  final String fcstTime;
+  final double? temperatureC;
+  final double? popPct;
+  final String sky;
+  final String pty;
+  final double? windSpeedMs;
+  final String windDirectionText;
+
+  String get label {
+    if (fcstDate.length < 8 || fcstTime.length < 4) return '$fcstDate $fcstTime';
+    final mm = fcstDate.substring(4, 6);
+    final dd = fcstDate.substring(6, 8);
+    final hh = fcstTime.substring(0, 2);
+    return '$mm/$dd $hh:00';
+  }
+
+  static ForecastItem fromJson(Map<String, dynamic> json) {
+    return ForecastItem(
+      fcstDate: '${json['fcstDate'] ?? ''}',
+      fcstTime: '${json['fcstTime'] ?? ''}',
+      temperatureC: json['temperatureC'] is num
+          ? (json['temperatureC'] as num).toDouble()
+          : double.tryParse('${json['temperatureC']}'),
+      popPct: json['popPct'] is num
+          ? (json['popPct'] as num).toDouble()
+          : double.tryParse('${json['popPct']}'),
+      sky: '${json['sky'] ?? '정보없음'}',
+      pty: '${json['pty'] ?? '정보없음'}',
+      windSpeedMs: json['windSpeedMs'] is num
+          ? (json['windSpeedMs'] as num).toDouble()
+          : double.tryParse('${json['windSpeedMs']}'),
+      windDirectionText: '${json['windDirectionText'] ?? '정보없음'}',
+    );
+  }
+}
+
+class WeatherSummary {
+  const WeatherSummary({
+    required this.temperatureC,
+    required this.humidityPct,
+    required this.rainfallMm,
+    required this.windSpeedMs,
+    required this.windDirectionText,
+    required this.baseDate,
+    required this.baseTime,
+    required this.forecast,
+  });
+
+  final double? temperatureC;
+  final double? humidityPct;
+  final double? rainfallMm;
+  final double? windSpeedMs;
+  final String windDirectionText;
+  final String baseDate;
+  final String baseTime;
+  final List<ForecastItem> forecast;
+
+  static WeatherSummary fromJson(Map<String, dynamic> json) {
+    final current = (json['current'] is Map<String, dynamic>)
+        ? json['current'] as Map<String, dynamic>
+        : <String, dynamic>{};
+
+    final list = (json['forecast'] is List)
+        ? (json['forecast'] as List)
+            .whereType<Map<String, dynamic>>()
+            .map(ForecastItem.fromJson)
+            .toList()
+        : <ForecastItem>[];
+
+    return WeatherSummary(
+      temperatureC: current['temperatureC'] is num
+          ? (current['temperatureC'] as num).toDouble()
+          : double.tryParse('${current['temperatureC']}'),
+      humidityPct: current['humidityPct'] is num
+          ? (current['humidityPct'] as num).toDouble()
+          : double.tryParse('${current['humidityPct']}'),
+      rainfallMm: current['rainfallMm'] is num
+          ? (current['rainfallMm'] as num).toDouble()
+          : double.tryParse('${current['rainfallMm']}'),
+      windSpeedMs: current['windSpeedMs'] is num
+          ? (current['windSpeedMs'] as num).toDouble()
+          : double.tryParse('${current['windSpeedMs']}'),
+      windDirectionText: '${current['windDirectionText'] ?? '정보없음'}',
+      baseDate: '${json['baseDate'] ?? ''}',
+      baseTime: '${json['baseTime'] ?? ''}',
+      forecast: list,
+    );
+  }
+}
 class AirGuideApi {
   static List<String> get baseUrls => kIsWeb
       ? const ['http://localhost:8000', 'http://127.0.0.1:8000']
@@ -117,32 +219,68 @@ class AirGuideApi {
     int nx = 60,
     int ny = 127,
   }) async {
+    final uri = await _firstReachableUri(
+      (base) => Uri.parse(
+        '$base/status/summary?sidoName=${Uri.encodeQueryComponent(sidoName)}&nx=$nx&ny=$ny&address=${Uri.encodeQueryComponent(address)}',
+      ),
+    );
+
+    final res = await http
+        .get(uri, headers: {'Accept': 'application/json'})
+        .timeout(const Duration(seconds: 15));
+
+    if (res.statusCode != 200) {
+      throw Exception('상태 조회 실패: HTTP ${res.statusCode}');
+    }
+
+    final decoded = jsonDecode(res.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw Exception('상태 응답 형식 오류');
+    }
+
+    return StatusSummary.fromJson(decoded);
+  }
+
+  static Future<WeatherSummary> fetchWeatherSummary({
+    required String address,
+    int nx = 60,
+    int ny = 127,
+  }) async {
+    final uri = await _firstReachableUri(
+      (base) => Uri.parse(
+        '$base/weather/summary?nx=$nx&ny=$ny&address=${Uri.encodeQueryComponent(address)}',
+      ),
+    );
+
+    final res = await http
+        .get(uri, headers: {'Accept': 'application/json'})
+        .timeout(const Duration(seconds: 15));
+
+    if (res.statusCode != 200) {
+      throw Exception('날씨 조회 실패: HTTP ${res.statusCode}');
+    }
+
+    final decoded = jsonDecode(res.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw Exception('날씨 응답 형식 오류');
+    }
+
+    return WeatherSummary.fromJson(decoded);
+  }
+
+  static Future<Uri> _firstReachableUri(Uri Function(String baseUrl) builder) async {
     final errors = <String>[];
 
-    for (final baseUrl in baseUrls) {
-      final uri = Uri.parse(
-        '$baseUrl/status/summary?sidoName=${Uri.encodeQueryComponent(sidoName)}&nx=$nx&ny=$ny&address=${Uri.encodeQueryComponent(address)}',
-      );
-
+    for (final base in baseUrls) {
+      final uri = builder(base);
       try {
-        final response = await http
+        final res = await http
             .get(uri, headers: {'Accept': 'application/json'})
-            .timeout(const Duration(seconds: 15));
-
-        if (response.statusCode != 200) {
-          errors.add('$baseUrl => HTTP ${response.statusCode}');
-          continue;
-        }
-
-        final decoded = jsonDecode(response.body);
-        if (decoded is! Map<String, dynamic>) {
-          errors.add('$baseUrl => JSON 형식 오류');
-          continue;
-        }
-
-        return StatusSummary.fromJson(decoded);
+            .timeout(const Duration(seconds: 8));
+        if (res.statusCode == 200) return uri;
+        errors.add('$base => ${res.statusCode}');
       } catch (e) {
-        errors.add('$baseUrl => $e');
+        errors.add('$base => $e');
       }
     }
 
@@ -262,7 +400,7 @@ String ventilationTipByWind({
   required String windText,
 }) {
   if (recommendation == '창문 닫기') {
-    return '현재는 창문을 닫고 공기청정기/환기장치를 활용하세요.';
+    return '현재는 창문을 닫고 실내 공기 관리가 좋아요.';
   }
 
   if (windText.contains('북')) return '남쪽 창문 중심으로 5~10분 환기해보세요.';
@@ -291,7 +429,6 @@ class AirGuideApp extends StatelessWidget {
     );
   }
 }
-
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -302,11 +439,18 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   static const _addressKey = 'address';
   static const _floorKey = 'floor';
+  static const _notifyGoodKey = 'notify_good';
+  static const _notifyBadKey = 'notify_bad';
+  static const _notifyTrafficKey = 'notify_traffic';
 
-  int currentIndex = 1;
+  int currentIndex = 0;
   bool loading = true;
+
   String address = '';
   int? floor;
+  bool notifyGood = true;
+  bool notifyBad = true;
+  bool notifyTraffic = true;
 
   @override
   void initState() {
@@ -319,20 +463,33 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       address = prefs.getString(_addressKey) ?? '';
       floor = prefs.getInt(_floorKey);
+      notifyGood = prefs.getBool(_notifyGoodKey) ?? true;
+      notifyBad = prefs.getBool(_notifyBadKey) ?? true;
+      notifyTraffic = prefs.getBool(_notifyTrafficKey) ?? true;
       loading = false;
     });
   }
 
-  Future<void> _save({
+  Future<void> _saveSettings({
     required String newAddress,
     required int newFloor,
+    required bool newNotifyGood,
+    required bool newNotifyBad,
+    required bool newNotifyTraffic,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_addressKey, newAddress);
     await prefs.setInt(_floorKey, newFloor);
+    await prefs.setBool(_notifyGoodKey, newNotifyGood);
+    await prefs.setBool(_notifyBadKey, newNotifyBad);
+    await prefs.setBool(_notifyTrafficKey, newNotifyTraffic);
+
     setState(() {
       address = newAddress;
       floor = newFloor;
+      notifyGood = newNotifyGood;
+      notifyBad = newNotifyBad;
+      notifyTraffic = newNotifyTraffic;
     });
   }
 
@@ -343,13 +500,16 @@ class _HomePageState extends State<HomePage> {
     }
 
     final pages = [
-      SetupPage(
+      StatusPage(address: address, floor: floor),
+      WeatherPage(address: address, floor: floor),
+      SettingsPage(
         initialAddress: address,
         initialFloor: floor,
-        onSave: _save,
+        initialNotifyGood: notifyGood,
+        initialNotifyBad: notifyBad,
+        initialNotifyTraffic: notifyTraffic,
+        onSave: _saveSettings,
       ),
-      StatusPage(address: address, floor: floor),
-      AlertPage(address: address, floor: floor),
     ];
 
     return Scaffold(
@@ -396,35 +556,52 @@ class _HomePageState extends State<HomePage> {
         selectedIndex: currentIndex,
         onDestinationSelected: (v) => setState(() => currentIndex = v),
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.home_rounded), label: '설정'),
           NavigationDestination(icon: Icon(Icons.air_rounded), label: '상태'),
-          NavigationDestination(icon: Icon(Icons.notifications_active_rounded), label: '알림'),
+          NavigationDestination(icon: Icon(Icons.cloud_outlined), label: '날씨'),
+          NavigationDestination(icon: Icon(Icons.settings_rounded), label: '설정'),
         ],
       ),
     );
   }
 }
 
-class SetupPage extends StatefulWidget {
-  const SetupPage({
+class SettingsPage extends StatefulWidget {
+  const SettingsPage({
     super.key,
     required this.initialAddress,
     required this.initialFloor,
+    required this.initialNotifyGood,
+    required this.initialNotifyBad,
+    required this.initialNotifyTraffic,
     required this.onSave,
   });
 
   final String initialAddress;
   final int? initialFloor;
-  final Future<void> Function({required String newAddress, required int newFloor}) onSave;
+  final bool initialNotifyGood;
+  final bool initialNotifyBad;
+  final bool initialNotifyTraffic;
+  final Future<void> Function({
+    required String newAddress,
+    required int newFloor,
+    required bool newNotifyGood,
+    required bool newNotifyBad,
+    required bool newNotifyTraffic,
+  }) onSave;
 
   @override
-  State<SetupPage> createState() => _SetupPageState();
+  State<SettingsPage> createState() => _SettingsPageState();
 }
 
-class _SetupPageState extends State<SetupPage> {
+class _SettingsPageState extends State<SettingsPage> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _addressController;
   late final TextEditingController _floorController;
+
+  late bool _notifyGood;
+  late bool _notifyBad;
+  late bool _notifyTraffic;
+
   bool saving = false;
 
   @override
@@ -432,6 +609,9 @@ class _SetupPageState extends State<SetupPage> {
     super.initState();
     _addressController = TextEditingController(text: widget.initialAddress);
     _floorController = TextEditingController(text: widget.initialFloor?.toString() ?? '');
+    _notifyGood = widget.initialNotifyGood;
+    _notifyBad = widget.initialNotifyBad;
+    _notifyTraffic = widget.initialNotifyTraffic;
   }
 
   @override
@@ -463,6 +643,9 @@ class _SetupPageState extends State<SetupPage> {
       await widget.onSave(
         newAddress: _addressController.text.trim(),
         newFloor: int.parse(_floorController.text.trim()),
+        newNotifyGood: _notifyGood,
+        newNotifyBad: _notifyBad,
+        newNotifyTraffic: _notifyTraffic,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -484,10 +667,8 @@ class _SetupPageState extends State<SetupPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('내 집 정보 설정', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Color(0xFF124A74))),
-                const SizedBox(height: 6),
-                const Text('주소 검색 + 층수만 입력하면 맞춤 환기 판단이 가능해요.'),
-                const SizedBox(height: 14),
+                const Text('기본 설정', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Color(0xFF124A74))),
+                const SizedBox(height: 12),
                 Row(
                   children: [
                     Expanded(
@@ -512,11 +693,27 @@ class _SetupPageState extends State<SetupPage> {
                   decoration: const InputDecoration(labelText: '층수', border: OutlineInputBorder()),
                   validator: (v) => (int.tryParse(v ?? '') ?? 0) <= 0 ? '층수를 확인하세요.' : null,
                 ),
-                const SizedBox(height: 14),
-                const _HintBox(
-                  text: '창문 각도 입력은 제거했습니다.\n상태 탭에서 바람 방향을 분석해 "어느 방향 창문을 여는 게 좋은지" 안내해드려요.',
+                const SizedBox(height: 16),
+                const Text('알림 카테고리', style: TextStyle(fontWeight: FontWeight.w700)),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('환기 권장 알림 (좋음 이상)'),
+                  value: _notifyGood,
+                  onChanged: (v) => setState(() => _notifyGood = v),
                 ),
-                const SizedBox(height: 14),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('대기 주의 알림 (보통 이하)'),
+                  value: _notifyBad,
+                  onChanged: (v) => setState(() => _notifyBad = v),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('도로/오염원 경고 알림'),
+                  value: _notifyTraffic,
+                  onChanged: (v) => setState(() => _notifyTraffic = v),
+                ),
+                const SizedBox(height: 10),
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
@@ -532,7 +729,6 @@ class _SetupPageState extends State<SetupPage> {
     );
   }
 }
-
 class StatusPage extends StatefulWidget {
   const StatusPage({super.key, required this.address, required this.floor});
 
@@ -561,6 +757,9 @@ class _StatusPageState extends State<StatusPage> {
   }
 
   Future<StatusSummary> _load() {
+    if (widget.address.isEmpty || widget.floor == null) {
+      return Future.error('설정 탭에서 주소/층수를 먼저 저장해주세요.');
+    }
     return AirGuideApi.fetchStatusSummary(
       sidoName: inferSidoNameFromAddress(widget.address),
       address: widget.address,
@@ -569,16 +768,8 @@ class _StatusPageState extends State<StatusPage> {
 
   void _refresh() => setState(() => _future = _load());
 
-  Future<void> _openKakaoMap(String stationName) async {
-    final query = widget.address.trim().isNotEmpty ? widget.address.trim() : stationName.trim();
-    final uri = Uri.parse('https://map.kakao.com/link/search/${Uri.encodeComponent(query)}');
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
-  }
-
   @override
   Widget build(BuildContext context) {
-    final hasSetup = widget.address.isNotEmpty && widget.floor != null;
-
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -636,77 +827,39 @@ class _StatusPageState extends State<StatusPage> {
                 ]),
                 const SizedBox(height: 10),
                 _HintBox(text: ventilationTipByWind(recommendation: s.recommendation, windText: s.windDirectionText)),
-                const SizedBox(height: 10),
-                const _ScoreLegend(),
-                const SizedBox(height: 12),
-                const Text('현재 판단 이유', style: TextStyle(fontWeight: FontWeight.w700)),
-                const SizedBox(height: 6),
-                for (final reason in s.reasons)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Padding(
-                          padding: EdgeInsets.only(top: 2),
-                          child: Icon(Icons.info_outline, size: 16, color: Color(0xFF2E7DB8)),
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(child: Text(reason)),
-                      ],
+                if (s.riskScore >= 41 && s.reasons.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  const Text('판단 이유', style: TextStyle(fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 6),
+                  for (final reason in s.reasons.take(2))
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Text('- $reason'),
                     ),
-                  ),
-                const SizedBox(height: 10),
-                _InfoRow(label: 'PM10', value: s.pm10Value),
-                _InfoRow(label: 'PM2.5', value: s.pm25Value),
-                _InfoRow(label: 'O3', value: s.o3Value),
-                _InfoRow(label: 'NO2', value: s.no2Value),
-                _InfoRow(label: 'SO2', value: s.so2Value),
-                _InfoRow(label: 'CO', value: s.coValue),
-                const SizedBox(height: 14),
-                const Text('내 위치/측정소 지도', style: TextStyle(fontWeight: FontWeight.w700)),
-                const SizedBox(height: 8),
-                KakaoMapEmbed(
-                  kakaoJsKey: kKakaoJsKey,
-                  address: widget.address,
-                  stationName: s.stationName,
-                  height: 240,
-                ),
-                const SizedBox(height: 8),
-                OutlinedButton.icon(onPressed: () => _openKakaoMap(s.stationName), icon: const Icon(Icons.map), label: const Text('카카오 지도 크게 보기')),
+                ],
+                const SizedBox(height: 12),
+                const _ScoreLegend(),
               ]),
             );
           },
-        ),
-        const SizedBox(height: 12),
-        _SoftCard(
-          child: hasSetup
-              ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  const Text('내 집 기준 정보', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Color(0xFF124A74))),
-                  const SizedBox(height: 10),
-                  _InfoRow(label: '주소', value: widget.address),
-                  _InfoRow(label: '층수', value: '${widget.floor}층'),
-                  _InfoRow(label: '시도', value: inferSidoNameFromAddress(widget.address)),
-                ])
-              : const Text('먼저 설정 탭에서 주소/층수를 저장해주세요.'),
         ),
       ],
     );
   }
 }
 
-class AlertPage extends StatefulWidget {
-  const AlertPage({super.key, required this.address, required this.floor});
+class WeatherPage extends StatefulWidget {
+  const WeatherPage({super.key, required this.address, required this.floor});
 
   final String address;
   final int? floor;
 
   @override
-  State<AlertPage> createState() => _AlertPageState();
+  State<WeatherPage> createState() => _WeatherPageState();
 }
 
-class _AlertPageState extends State<AlertPage> {
-  late Future<StatusSummary> _future;
+class _WeatherPageState extends State<WeatherPage> {
+  late Future<WeatherSummary> _future;
 
   @override
   void initState() {
@@ -715,70 +868,110 @@ class _AlertPageState extends State<AlertPage> {
   }
 
   @override
-  void didUpdateWidget(covariant AlertPage oldWidget) {
+  void didUpdateWidget(covariant WeatherPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.address != widget.address || oldWidget.floor != widget.floor) {
       _future = _load();
     }
   }
 
-  Future<StatusSummary> _load() {
+  Future<WeatherSummary> _load() {
     if (widget.address.isEmpty || widget.floor == null) {
-      return Future.error('설정 탭에서 주소/층수 저장 후 확인해주세요.');
+      return Future.error('설정 탭에서 주소/층수를 먼저 저장해주세요.');
     }
-    return AirGuideApi.fetchStatusSummary(
-      sidoName: inferSidoNameFromAddress(widget.address),
-      address: widget.address,
-    );
+    return AirGuideApi.fetchWeatherSummary(address: widget.address);
   }
+
+  void _refresh() => setState(() => _future = _load());
 
   @override
   Widget build(BuildContext context) {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        FutureBuilder<StatusSummary>(
+        FutureBuilder<WeatherSummary>(
           future: _future,
           builder: (context, snap) {
             if (snap.connectionState == ConnectionState.waiting) {
               return const _SoftCard(child: Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator())));
             }
             if (snap.hasError) {
-              return _SoftCard(child: Text('${snap.error}'));
+              return _SoftCard(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  const Text('날씨 정보를 가져오지 못했어요', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 8),
+                  Text('${snap.error}'),
+                  const SizedBox(height: 10),
+                  FilledButton(onPressed: _refresh, child: const Text('다시 시도')),
+                ]),
+              );
             }
 
-            final s = snap.requireData;
-            final band = scoreBandFrom(s.riskScore);
-
+            final w = snap.requireData;
             return Column(
               children: [
                 _SoftCard(
-                  child: ListTile(
-                    leading: Icon(Icons.notifications_active_rounded, color: band.color, size: 30),
-                    title: Text('실시간 알림 메시지 (${s.scoreGrade})', style: const TextStyle(fontWeight: FontWeight.w800)),
-                    subtitle: Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text(
-                        s.notificationMessage,
-                        style: const TextStyle(fontSize: 16),
-                      ),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Row(children: [
+                      const Text('현재 날씨', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Color(0xFF124A74))),
+                      const Spacer(),
+                      TextButton.icon(onPressed: _refresh, icon: const Icon(Icons.refresh), label: const Text('새로고침')),
+                    ]),
+                    _InfoRow(label: '기온', value: w.temperatureC == null ? '-' : '${w.temperatureC!.toStringAsFixed(1)}°C'),
+                    _InfoRow(label: '습도', value: w.humidityPct == null ? '-' : '${w.humidityPct!.toStringAsFixed(0)}%'),
+                    _InfoRow(label: '강수', value: w.rainfallMm == null ? '-' : '${w.rainfallMm!.toStringAsFixed(1)} mm'),
+                    _InfoRow(label: '풍향', value: w.windDirectionText),
+                    _InfoRow(label: '풍속', value: w.windSpeedMs == null ? '-' : '${w.windSpeedMs!.toStringAsFixed(1)} m/s'),
+                    const SizedBox(height: 8),
+                    const Text('위치 기반 날씨 지도', style: TextStyle(fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 8),
+                    KakaoMapEmbed(
+                      kakaoJsKey: kKakaoJsKey,
+                      address: widget.address,
+                      stationName: widget.address,
+                      height: 220,
                     ),
-                  ),
+                  ]),
                 ),
                 const SizedBox(height: 12),
                 _SoftCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('알림 기준', style: TextStyle(fontWeight: FontWeight.w700)),
-                      const SizedBox(height: 8),
-                      const Text('매우좋음: 최상의 대기 상태에요. 지금 환기하세요.'),
-                      const Text('좋음: 대기 상태가 좋아요. 5~10분 환기해볼까요?'),
-                      const Text('보통 이하: 대기 상태가 좋지 않아요. 오늘은 창문을 열지 말아요.'),
-                      const SizedBox(height: 8),
-                      Text('현재 AI 스코어 ${s.riskScore} (${s.scoreGrade})'),
-                    ],
-                  ),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Text('단기예보', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Color(0xFF124A74))),
+                    const SizedBox(height: 6),
+                    Text('기준시각: ${w.baseDate} ${w.baseTime}', style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      height: 132,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: w.forecast.length,
+                        separatorBuilder: (context, index) => const SizedBox(width: 8),
+                        itemBuilder: (context, i) {
+                          final f = w.forecast[i];
+                          return Container(
+                            width: 150,
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFEFF8FF),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: const Color(0xFFD2EAFB)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(f.label, style: const TextStyle(fontWeight: FontWeight.w700)),
+                                const SizedBox(height: 6),
+                                Text('기온 ${f.temperatureC == null ? '-' : '${f.temperatureC!.toStringAsFixed(1)}°'}'),
+                                Text('강수확률 ${f.popPct == null ? '-' : '${f.popPct!.toStringAsFixed(0)}%'}'),
+                                Text('하늘 ${f.sky}'),
+                                Text('강수형태 ${f.pty}'),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ]),
                 ),
               ],
             );
@@ -788,7 +981,6 @@ class _AlertPageState extends State<AlertPage> {
     );
   }
 }
-
 class _SoftCard extends StatelessWidget {
   const _SoftCard({required this.child});
 
@@ -901,3 +1093,4 @@ class _InfoRow extends StatelessWidget {
     );
   }
 }
+
